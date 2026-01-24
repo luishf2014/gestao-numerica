@@ -95,12 +95,7 @@ CREATE POLICY "Admins can view all draws"
   FOR SELECT
   TO authenticated
   USING (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================
@@ -128,12 +123,7 @@ CREATE POLICY "Admins can insert draws"
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================

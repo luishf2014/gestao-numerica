@@ -10,6 +10,7 @@ As migrações devem ser aplicadas nesta ordem exata:
    - Cria todas as tabelas: profiles, contests, participations, draws, payments
 
 2. **`002_rls_profiles.sql`** - Row Level Security para tabela profiles (FASE 2)
+   - Inclui a função `public.is_admin(uid)` (SECURITY DEFINER) para evitar recursão infinita de RLS
 
 3. **`003_rls_contests.sql`** - Row Level Security para tabela contests (FASE 2)
 

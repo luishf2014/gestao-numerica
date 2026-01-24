@@ -109,12 +109,7 @@ CREATE POLICY "Admins can view all participations"
   FOR SELECT
   TO authenticated
   USING (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================
@@ -141,12 +136,7 @@ CREATE POLICY "Admins can insert participations"
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================
@@ -174,12 +164,7 @@ CREATE POLICY "Admins can delete participations"
   FOR DELETE
   TO authenticated
   USING (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================

@@ -29,6 +29,27 @@
 -- Após habilitar, todas as operações serão bloqueadas por padrão,
 -- exceto aquelas explicitamente permitidas pelas policies abaixo.
 -- ============================================
+-- ============================================
+-- FUNÇÃO AUXILIAR: is_admin(uid)
+-- ============================================
+--
+-- Evita "infinite recursion" em policies que consultam a própria tabela profiles.
+-- A função é SECURITY DEFINER para executar com privilégios do owner e não cair em
+-- recursão de RLS quando chamada dentro de policies.
+-- ============================================
+CREATE OR REPLACE FUNCTION public.is_admin(uid uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE((SELECT p.is_admin FROM public.profiles p WHERE p.id = uid), false);
+$$;
+
+REVOKE ALL ON FUNCTION public.is_admin(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin(uuid) TO authenticated;
+
 ALTER TABLE public.profiles
   ENABLE ROW LEVEL SECURITY;
 

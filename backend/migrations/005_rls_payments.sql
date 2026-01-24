@@ -104,12 +104,7 @@ CREATE POLICY "Admins can view all payments"
   FOR SELECT
   TO authenticated
   USING (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================
@@ -138,12 +133,7 @@ CREATE POLICY "Admins can insert payments"
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================
@@ -179,20 +169,10 @@ CREATE POLICY "Admins can update payments"
   FOR UPDATE
   TO authenticated
   USING (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   )
   WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.is_admin = true
-    )
+    public.is_admin(auth.uid())
   );
 
 -- ============================================

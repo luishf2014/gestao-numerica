@@ -31,6 +31,43 @@ export async function createParticipation(params: {
     throw new Error('Dados inválidos para criar participação')
   }
 
+  // CHATGPT: alterei aqui - Validar se o concurso está ativo e pode aceitar participações
+  const { data: contest, error: contestError } = await supabase
+    .from('contests')
+    .select('id, status, end_date')
+    .eq('id', params.contestId)
+    .single()
+
+  if (contestError || !contest) {
+    throw new Error('Concurso não encontrado')
+  }
+
+  // Verificar se o concurso está finalizado
+  if (contest.status === 'finished') {
+    throw new Error('Este concurso já foi finalizado e não aceita novas participações')
+  }
+
+  // Verificar se o concurso está ativo
+  if (contest.status !== 'active') {
+    throw new Error('Este concurso não está ativo no momento')
+  }
+
+  // Verificar se a data de encerramento já passou
+  if (contest.end_date && new Date(contest.end_date) < new Date()) {
+    throw new Error('O prazo para participação neste concurso já encerrou')
+  }
+
+  // CHATGPT: alterei aqui - Verificar se já existe sorteio para este concurso (backup adicional)
+  const { data: draws, error: drawsError } = await supabase
+    .from('draws')
+    .select('id')
+    .eq('contest_id', params.contestId)
+    .limit(1)
+
+  if (!drawsError && draws && draws.length > 0) {
+    throw new Error('Este concurso já possui sorteios realizados e não aceita novas participações')
+  }
+
   // MODIFIQUEI AQUI - Garantir que os números são válidos (inteiros positivos)
   const validNumbers = params.numbers.filter(n => Number.isInteger(n) && n > 0)
   if (validNumbers.length !== params.numbers.length) {
@@ -257,7 +294,8 @@ export async function activateParticipation(participationId: string): Promise<Pa
     throw new Error('Participação não encontrada')
   }
 
-  // MODIFIQUEI AQUI - Atualizar usando maybeSingle() para evitar erro 406
+  // CHATGPT: alterei aqui - Atualizar usando maybeSingle() para evitar erro 406
+  console.log(`[participationsService] Ativando participação ${participationId}...`)
   const { data, error } = await supabase
     .from('participations')
     .update({
@@ -269,6 +307,7 @@ export async function activateParticipation(participationId: string): Promise<Pa
     .maybeSingle()
 
   if (error) {
+    console.error(`[participationsService] Erro ao ativar participação ${participationId}:`, error)
     if (error.code === '42501') {
       throw new Error('Você não tem permissão para ativar esta participação')
     }
@@ -276,9 +315,11 @@ export async function activateParticipation(participationId: string): Promise<Pa
   }
 
   if (!data) {
+    console.error(`[participationsService] Participação ${participationId} não encontrada após atualização`)
     throw new Error('Participação não encontrada após atualização')
   }
 
+  console.log(`[participationsService] Participação ${participationId} ativada com sucesso. Status: ${data.status}`)
   return data
 }
 

@@ -40,8 +40,37 @@ export async function listActiveContests(): Promise<Contest[]> {
 }
 
 /**
+ * Lista todos os concursos finalizados
+ * MODIFIQUEI AQUI - Função para buscar concursos finalizados (histórico)
+ */
+export async function listFinishedContests(): Promise<Contest[]> {
+  try {
+    const { data, error } = await supabase
+      .from('contests')
+      .select('*')
+      .eq('status', 'finished')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[contestsService] Erro ao buscar concursos finalizados:', {
+        error,
+        code: error.code,
+        message: error.message,
+      })
+      throw new Error(`Erro ao buscar concursos finalizados: ${error.message}`)
+    }
+
+    return data || []
+  } catch (err) {
+    console.error('[contestsService] Exceção ao buscar concursos finalizados:', err)
+    throw err
+  }
+}
+
+/**
  * Lista todos os concursos (apenas para administradores)
  * Retorna concursos com qualquer status
+ * CHATGPT: alterei aqui - Garantir que sempre retorna dados atualizados
  */
 export async function listAllContests(): Promise<Contest[]> {
   const { data, error } = await supabase
@@ -92,6 +121,11 @@ export interface CreateContestInput {
   end_date: string
   status?: ContestStatus
   participation_value?: number
+  // MODIFIQUEI AQUI - Percentuais de premiação configuráveis
+  first_place_pct?: number
+  second_place_pct?: number
+  lowest_place_pct?: number
+  admin_fee_pct?: number
 }
 
 export async function createContest(input: CreateContestInput): Promise<Contest> {
@@ -132,6 +166,11 @@ export interface UpdateContestInput {
   end_date?: string
   status?: ContestStatus
   participation_value?: number
+  // MODIFIQUEI AQUI - Percentuais de premiação configuráveis
+  first_place_pct?: number
+  second_place_pct?: number
+  lowest_place_pct?: number
+  admin_fee_pct?: number
 }
 
 export async function updateContest(

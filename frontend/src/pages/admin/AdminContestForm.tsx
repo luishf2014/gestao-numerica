@@ -29,6 +29,11 @@ export default function AdminContestForm() {
     end_date: '',
     status: 'draft',
     participation_value: undefined,
+    // MODIFIQUEI AQUI - Valores padrão de percentuais de premiação
+    first_place_pct: 65,
+    second_place_pct: 10,
+    lowest_place_pct: 7,
+    admin_fee_pct: 18,
   })
 
   useEffect(() => {
@@ -62,6 +67,11 @@ export default function AdminContestForm() {
         end_date: endDate.toISOString().slice(0, 16),
         status: contest.status,
         participation_value: contest.participation_value || undefined,
+        // MODIFIQUEI AQUI - Carregar percentuais de premiação do concurso
+        first_place_pct: contest.first_place_pct || 65,
+        second_place_pct: contest.second_place_pct || 10,
+        lowest_place_pct: contest.lowest_place_pct || 7,
+        admin_fee_pct: contest.admin_fee_pct || 18,
       })
     } catch (err) {
       console.error('Erro ao carregar concurso:', err)
@@ -97,6 +107,23 @@ export default function AdminContestForm() {
         throw new Error('A data de término deve ser posterior à data de início')
       }
 
+      // MODIFIQUEI AQUI - Validar percentuais de premiação
+      const firstPct = formData.first_place_pct || 65
+      const secondPct = formData.second_place_pct || 10
+      const lowestPct = formData.lowest_place_pct || 7
+      const adminPct = formData.admin_fee_pct || 18
+
+      // Validar valores não negativos
+      if (firstPct < 0 || secondPct < 0 || lowestPct < 0 || adminPct < 0) {
+        throw new Error('Os percentuais de premiação não podem ser negativos')
+      }
+
+      // Validar que a soma seja 100%
+      const totalPercent = firstPct + secondPct + lowestPct + adminPct
+      if (Math.abs(totalPercent - 100) > 0.01) {
+        throw new Error(`A soma dos percentuais de premiação deve ser 100%. Atual: ${totalPercent.toFixed(2)}%`)
+      }
+
       if (isEditing && id) {
         const updateData: UpdateContestInput = {
           name: formData.name,
@@ -108,6 +135,11 @@ export default function AdminContestForm() {
           end_date: formData.end_date,
           status: formData.status,
           participation_value: formData.participation_value || undefined,
+          // MODIFIQUEI AQUI - Incluir percentuais de premiação
+          first_place_pct: firstPct,
+          second_place_pct: secondPct,
+          lowest_place_pct: lowestPct,
+          admin_fee_pct: adminPct,
         }
         await updateContest(id, updateData)
       } else {
@@ -127,10 +159,20 @@ export default function AdminContestForm() {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'min_number' || name === 'max_number' || name === 'numbers_per_participation' || name === 'participation_value'
+      [name]: name === 'min_number' || name === 'max_number' || name === 'numbers_per_participation' || name === 'participation_value' || 
+               name === 'first_place_pct' || name === 'second_place_pct' || name === 'lowest_place_pct' || name === 'admin_fee_pct'
         ? value === '' ? undefined : Number(value)
         : value,
     }))
+  }
+
+  // MODIFIQUEI AQUI - Calcular total de percentuais para validação em tempo real
+  const getTotalPercent = (): number => {
+    const first = formData.first_place_pct || 65
+    const second = formData.second_place_pct || 10
+    const lowest = formData.lowest_place_pct || 7
+    const admin = formData.admin_fee_pct || 18
+    return first + second + lowest + admin
   }
 
   if (loading) {
@@ -343,6 +385,106 @@ export default function AdminContestForm() {
                   placeholder="0.00"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* MODIFIQUEI AQUI - Seção de Percentuais de Premiação */}
+          <div className="mb-6">
+            <h3 className="text-lg font-bold text-[#1F1F1F] mb-4">Percentuais de Premiação</h3>
+            <p className="text-sm text-[#1F1F1F]/70 mb-4">
+              Configure como o valor arrecadado será distribuído entre os ganhadores. A soma deve ser 100%.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label htmlFor="first_place_pct" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                  Maior Pontuação (%) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="first_place_pct"
+                  name="first_place_pct"
+                  value={formData.first_place_pct || 65}
+                  onChange={handleChange}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label htmlFor="second_place_pct" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                  Segunda Maior (%) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="second_place_pct"
+                  name="second_place_pct"
+                  value={formData.second_place_pct || 10}
+                  onChange={handleChange}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label htmlFor="lowest_place_pct" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                  Menor Pontuação (%) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="lowest_place_pct"
+                  name="lowest_place_pct"
+                  value={formData.lowest_place_pct || 7}
+                  onChange={handleChange}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label htmlFor="admin_fee_pct" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                  Taxa Administrativa (%) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="admin_fee_pct"
+                  name="admin_fee_pct"
+                  value={formData.admin_fee_pct || 18}
+                  onChange={handleChange}
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  required
+                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
+                />
+              </div>
+            </div>
+            {/* MODIFIQUEI AQUI - Indicador visual do total */}
+            <div className={`mt-4 p-3 rounded-xl ${
+              Math.abs(getTotalPercent() - 100) < 0.01
+                ? 'bg-[#3CCB7F]/10 border border-[#3CCB7F]/20'
+                : 'bg-[#F4C430]/10 border border-[#F4C430]/20'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-[#1F1F1F]">Total:</span>
+                <span className={`text-lg font-bold ${
+                  Math.abs(getTotalPercent() - 100) < 0.01
+                    ? 'text-[#3CCB7F]'
+                    : 'text-[#F4C430]'
+                }`}>
+                  {getTotalPercent().toFixed(2)}%
+                </span>
+              </div>
+              {Math.abs(getTotalPercent() - 100) >= 0.01 && (
+                <p className="text-xs text-[#F4C430] mt-1">
+                  ⚠️ A soma deve ser exatamente 100%
+                </p>
+              )}
             </div>
           </div>
 

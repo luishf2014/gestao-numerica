@@ -6,13 +6,20 @@
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listActiveContests } from '../services/contestsService'
+import { listActiveContests, listFinishedContests } from '../services/contestsService'
+import { listDrawsByContestId } from '../services/drawsService'
 import { Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import ContestStatusBadge from '../components/ContestStatusBadge'
+
+type TabType = 'active' | 'history'
 
 export default function ContestsListPage() {
-  const [contests, setContests] = useState<Contest[]>([])
+  const [activeTab, setActiveTab] = useState<TabType>('active')
+  const [activeContests, setActiveContests] = useState<Contest[]>([])
+  const [finishedContests, setFinishedContests] = useState<Contest[]>([])
+  const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,12 +28,37 @@ export default function ContestsListPage() {
       try {
         setLoading(true)
         setError(null)
-        console.log('[ContestsListPage] MODIFIQUEI AQUI - Carregando concursos ativos...')
-        const data = await listActiveContests()
-        console.log('[ContestsListPage] MODIFIQUEI AQUI - Concursos carregados:', data.length)
-        setContests(data)
+        console.log('[ContestsListPage] CHATGPT: alterei aqui - Carregando concursos ativos e finalizados...')
+        
+        // CHATGPT: alterei aqui - Carregar concursos ativos e finalizados em paralelo
+        const [activeData, finishedData] = await Promise.all([
+          listActiveContests(),
+          listFinishedContests(),
+        ])
+        
+        console.log('[ContestsListPage] Concursos ativos:', activeData.length, 'Finalizados:', finishedData.length)
+        
+        // CHATGPT: alterei aqui - Verificar sorteios para todos os concursos (ativos + finalizados)
+        const drawsMap: Record<string, boolean> = {}
+        const allContests = [...activeData, ...finishedData]
+        
+        await Promise.all(
+          allContests.map(async (contest) => {
+            try {
+              const draws = await listDrawsByContestId(contest.id)
+              drawsMap[contest.id] = draws.length > 0
+            } catch (err) {
+              console.error(`Erro ao verificar sorteios do concurso ${contest.id}:`, err)
+              drawsMap[contest.id] = false
+            }
+          })
+        )
+        
+        setActiveContests(activeData)
+        setFinishedContests(finishedData)
+        setContestsWithDraws(drawsMap)
       } catch (err) {
-        console.error('[ContestsListPage] MODIFIQUEI AQUI - Erro ao carregar concursos:', err)
+        console.error('[ContestsListPage] Erro ao carregar concursos:', err)
         const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar concursos'
         setError(errorMessage)
       } finally {
@@ -84,35 +116,78 @@ export default function ContestsListPage() {
                   </svg>
                 </div>
                 <span className="px-3 sm:px-4 py-1 bg-[#3CCB7F]/30 text-white rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap">
-                  ● {contests.length} {contests.length === 1 ? 'Concurso Ativo' : 'Concursos Ativos'}
+                  ● {activeTab === 'active' ? activeContests.length : finishedContests.length} {activeTab === 'active' ? 'Ativos' : 'Finalizados'}
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-3">
-                Concursos Disponíveis
+                {activeTab === 'active' ? 'Concursos Disponíveis' : 'Histórico de Concursos'}
               </h1>
               <p className="text-white/90 text-sm sm:text-base md:text-lg max-w-2xl">
-                Escolha um concurso e participe agora! Sorte, confiança e praticidade em cada participação.
+                {activeTab === 'active' 
+                  ? 'Escolha um concurso e participe agora! Sorte, confiança e praticidade em cada participação.'
+                  : 'Visualize concursos finalizados e seus resultados. Histórico completo de sorteios realizados.'}
               </p>
             </div>
           </div>
         </div>
       </div>
 
+      {/* CHATGPT: alterei aqui - Abas para alternar entre Ativos e Histórico */}
+      <div className="container mx-auto px-2 sm:px-4 mb-6 max-w-7xl">
+        <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              activeTab === 'active'
+                ? 'bg-[#1E7F43] text-white shadow-md'
+                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+            }`}
+          >
+            Ativos ({activeContests.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              activeTab === 'history'
+                ? 'bg-[#1E7F43] text-white shadow-md'
+                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+            }`}
+          >
+            Histórico ({finishedContests.length})
+          </button>
+        </div>
+      </div>
+
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-2 sm:px-4 pb-6 sm:pb-8 flex-1 max-w-7xl">
-        {contests.length === 0 ? (
-          <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-8 sm:p-12 text-center shadow-xl">
-            <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-[#F9F9F9] rounded-full mb-3 sm:mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-[#E5E5E5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <p className="text-[#1F1F1F]/70 text-base sm:text-lg mb-2 px-4">Nenhum concurso ativo no momento.</p>
-            <p className="text-[#1F1F1F]/40 text-xs sm:text-sm px-4">Novos concursos aparecerão aqui quando forem criados.</p>
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {contests.map((contest) => (
+        {(() => {
+          const currentContests = activeTab === 'active' ? activeContests : finishedContests
+          
+          if (currentContests.length === 0) {
+            return (
+              <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-8 sm:p-12 text-center shadow-xl">
+                <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-[#F9F9F9] rounded-full mb-3 sm:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-[#E5E5E5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <p className="text-[#1F1F1F]/70 text-base sm:text-lg mb-2 px-4">
+                  {activeTab === 'active' 
+                    ? 'Nenhum concurso ativo no momento.'
+                    : 'Nenhum concurso finalizado ainda.'}
+                </p>
+                <p className="text-[#1F1F1F]/40 text-xs sm:text-sm px-4">
+                  {activeTab === 'active'
+                    ? 'Novos concursos aparecerão aqui quando forem criados.'
+                    : 'Os concursos finalizados aparecerão aqui após a realização dos sorteios.'}
+                </p>
+              </div>
+            )
+          }
+          
+          return (
+            <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {currentContests.map((contest) => (
               <div
                 key={contest.id}
                 className="rounded-2xl sm:rounded-3xl border-2 border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl hover:shadow-2xl hover:border-[#1E7F43] transition-all hover:scale-[1.01] sm:hover:scale-[1.02]"
@@ -121,13 +196,11 @@ export default function ContestsListPage() {
                 <div className="flex items-start justify-between mb-3 sm:mb-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                        contest.status === 'active' 
-                          ? 'bg-[#3CCB7F]/20 text-[#1E7F43]' 
-                          : 'bg-[#E5E5E5] text-[#1F1F1F]/60'
-                      }`}>
-                        {contest.status === 'active' ? '● Ativo' : contest.status}
-                      </span>
+                      <ContestStatusBadge 
+                        contest={contest} 
+                        hasDraws={contestsWithDraws[contest.id] || false}
+                        variant="card"
+                      />
                     </div>
                     <h3 className="text-lg sm:text-xl font-extrabold text-[#1F1F1F] mb-2 break-words">
                       {contest.name}
@@ -178,14 +251,19 @@ export default function ContestsListPage() {
                 {/* Botão */}
                 <Link
                   to={`/contests/${contest.id}`}
-                  className="block w-full text-center rounded-lg sm:rounded-xl bg-[#1E7F43] text-white py-2.5 sm:py-3 px-4 font-bold hover:bg-[#3CCB7F] transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.01] sm:hover:scale-[1.02] text-sm sm:text-base"
+                  className={`block w-full text-center rounded-lg sm:rounded-xl py-2.5 sm:py-3 px-4 font-bold transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.01] sm:hover:scale-[1.02] text-sm sm:text-base ${
+                    activeTab === 'history'
+                      ? 'bg-[#1F1F1F]/70 text-white hover:bg-[#1F1F1F]'
+                      : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F]'
+                  }`}
                 >
-                  Ver Detalhes
+                  {activeTab === 'history' ? 'Ver Resultados' : 'Ver Detalhes'}
                 </Link>
               </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )
+        })()}
       </div>
       <Footer />
     </div>

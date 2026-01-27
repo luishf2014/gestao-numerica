@@ -9,8 +9,10 @@ import { useParams, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
+import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { getHitNumbers } from '../utils/rankingHelpers'
+import { getHitNumbers, calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
+import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
@@ -23,6 +25,9 @@ export default function RankingPage() {
   const [contest, setContest] = useState<Contest | null>(null)
   const [participations, setParticipations] = useState<ParticipationWithUser[]>([])
   const [draws, setDraws] = useState<Draw[]>([])
+  const [selectedDrawId, setSelectedDrawId] = useState<string>('')
+  const [payoutSummary, setPayoutSummary] = useState<any>(null)
+  const [payouts, setPayouts] = useState<Record<string, number>>({}) // participationId -> amount_won
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,6 +58,13 @@ export default function RankingPage() {
         setContest(contestData)
         setParticipations(rankingData)
         setDraws(drawsData)
+        
+        // MODIFIQUEI AQUI - Selecionar o último sorteio por padrão
+        if (drawsData.length > 0) {
+          const lastDraw = drawsData[0] // Já ordenado por data desc
+          setSelectedDrawId(lastDraw.id)
+          await loadDrawPayouts(lastDraw.id)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar ranking')
       } finally {
@@ -62,6 +74,33 @@ export default function RankingPage() {
 
     loadRankingData()
   }, [id])
+
+  // MODIFIQUEI AQUI - Carregar prêmios quando sorteio selecionado mudar
+  const loadDrawPayouts = async (drawId: string) => {
+    try {
+      const [summary, drawPayouts] = await Promise.all([
+        getDrawPayoutSummary(drawId),
+        getPayoutsByDraw(drawId),
+      ])
+      
+      setPayoutSummary(summary)
+      
+      // Criar mapa de participação -> prêmio
+      const payoutsMap: Record<string, number> = {}
+      drawPayouts.forEach(p => {
+        payoutsMap[p.participation_id] = p.amount_won
+      })
+      setPayouts(payoutsMap)
+    } catch (err) {
+      console.error('Erro ao carregar prêmios:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (selectedDrawId) {
+      loadDrawPayouts(selectedDrawId)
+    }
+  }, [selectedDrawId])
 
   // Obter todos os números sorteados (união de todos os sorteios)
   const getAllDrawnNumbers = (): number[] => {
@@ -77,12 +116,21 @@ export default function RankingPage() {
     return getAllDrawnNumbers().includes(number)
   }
 
-  // Obter números acertados de uma participação
+  // MODIFIQUEI AQUI - Obter números acertados de uma participação (todos os sorteios)
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
-    if (draws.length === 0) return []
-    // Usar o último sorteio para destacar números acertados
-    const lastDraw = draws[0] // Já está ordenado por data (mais recente primeiro)
-    return getHitNumbers(lastDraw.numbers, participation.numbers)
+    return getAllHitNumbers(participation.numbers, draws)
+  }
+
+  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios
+  const getTotalScore = (participation: Participation): number => {
+    return calculateTotalScore(participation.numbers, draws)
+  }
+
+  // MODIFIQUEI AQUI - Calcular pontuação para um sorteio específico
+  const getScoreForDraw = (participation: Participation, drawId: string): number => {
+    const draw = draws.find(d => d.id === drawId)
+    if (!draw) return 0
+    return calculateTotalScore(participation.numbers, [draw])
   }
 
   if (loading) {
@@ -169,12 +217,119 @@ export default function RankingPage() {
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white">
                 <div className="text-sm font-semibold opacity-90 mb-1">Maior Pontuação</div>
                 <div className="text-3xl font-bold">
-                  {participations.length > 0 ? participations[0].current_score : 0}
+                  {participations.length > 0 ? getTotalScore(participations[0]) : 0}
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* MODIFIQUEI AQUI - Resultado do Sorteio */}
+        {draws.length > 0 && selectedDrawId && (
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-[#E5E5E5]">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-[#1F1F1F]">🎯 Resultado do Sorteio</h2>
+              {draws.length > 1 && (
+                <select
+                  value={selectedDrawId}
+                  onChange={(e) => setSelectedDrawId(e.target.value)}
+                  className="px-4 py-2 border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E7F43]"
+                >
+                  {draws.map(draw => (
+                    <option key={draw.id} value={draw.id}>
+                      {formatDateTime(draw.draw_date)} {draw.code ? `(${draw.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            
+            {payoutSummary && payoutSummary.maxScore === 0 ? (
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
+                <div className="text-4xl mb-3">😔</div>
+                <p className="text-lg font-semibold text-yellow-900">
+                  Não houve ganhadores nesse sorteio.
+                </p>
+                <p className="text-sm text-yellow-800 mt-2">
+                  Nenhum participante acertou números suficientes para receber prêmios.
+                </p>
+              </div>
+            ) : payoutSummary ? (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-[#1F1F1F] mb-3">Categorias Premiadas</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* TOP */}
+                  <div className={`rounded-xl p-4 border-2 ${
+                    payoutSummary.categories.TOP 
+                      ? 'bg-gradient-to-br from-[#F4C430] to-[#FFD700] border-[#F4C430]' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="text-sm font-semibold mb-2">TOP</div>
+                    {payoutSummary.categories.TOP ? (
+                      <>
+                        <div className="text-2xl font-bold mb-1">{payoutSummary.categories.TOP.score} acertos</div>
+                        <div className="text-sm mb-2">{payoutSummary.categories.TOP.winnersCount} ganhador(es)</div>
+                        <div className="text-lg font-bold">
+                          R$ {payoutSummary.categories.TOP.amountPerWinner.toFixed(2).replace('.', ',')}
+                        </div>
+                        <div className="text-xs opacity-75 mt-1">por ganhador</div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-600">Sem ganhadores</div>
+                    )}
+                  </div>
+                  
+                  {/* SECOND */}
+                  <div className={`rounded-xl p-4 border-2 ${
+                    payoutSummary.categories.SECOND 
+                      ? 'bg-gradient-to-br from-gray-200 to-gray-300 border-gray-400' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="text-sm font-semibold mb-2">SECOND</div>
+                    {payoutSummary.categories.SECOND ? (
+                      <>
+                        <div className="text-2xl font-bold mb-1">{payoutSummary.categories.SECOND.score} acertos</div>
+                        <div className="text-sm mb-2">{payoutSummary.categories.SECOND.winnersCount} ganhador(es)</div>
+                        <div className="text-lg font-bold">
+                          R$ {payoutSummary.categories.SECOND.amountPerWinner.toFixed(2).replace('.', ',')}
+                        </div>
+                        <div className="text-xs opacity-75 mt-1">por ganhador</div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-600">Sem ganhadores</div>
+                    )}
+                  </div>
+                  
+                  {/* LOWEST */}
+                  <div className={`rounded-xl p-4 border-2 ${
+                    payoutSummary.categories.LOWEST 
+                      ? 'bg-gradient-to-br from-orange-200 to-orange-300 border-orange-400' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="text-sm font-semibold mb-2">LOWEST</div>
+                    {payoutSummary.categories.LOWEST ? (
+                      <>
+                        <div className="text-2xl font-bold mb-1">{payoutSummary.categories.LOWEST.score} acertos</div>
+                        <div className="text-sm mb-2">{payoutSummary.categories.LOWEST.winnersCount} ganhador(es)</div>
+                        <div className="text-lg font-bold">
+                          R$ {payoutSummary.categories.LOWEST.amountPerWinner.toFixed(2).replace('.', ',')}
+                        </div>
+                        <div className="text-xs opacity-75 mt-1">por ganhador</div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-600">Sem ganhadores</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-[#1F1F1F]/60">
+                Carregando resultado do sorteio...
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Informações sobre sorteios */}
         {draws.length > 0 && (
@@ -220,12 +375,18 @@ export default function RankingPage() {
             <p className="text-[#1F1F1F]/70 mb-6">
               Ainda não há participações ativas neste concurso.
             </p>
-            <Link
-              to={`/contests/${contest.id}/join`}
-              className="inline-block px-6 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-bold hover:from-[#3CCB7F] hover:to-[#1E7F43] transition-all duration-300 shadow-lg hover:shadow-xl"
-            >
-              Participar Agora
-            </Link>
+            {canAcceptParticipations(contest, draws.length > 0) ? (
+              <Link
+                to={`/contests/${contest.id}/join`}
+                className="inline-block px-6 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-bold hover:from-[#3CCB7F] hover:to-[#1E7F43] transition-all duration-300 shadow-lg hover:shadow-xl"
+              >
+                Participar Agora
+              </Link>
+            ) : (
+              <div className="inline-block px-6 py-3 bg-[#E5E5E5] text-[#1F1F1F]/60 rounded-xl font-bold cursor-not-allowed">
+                {getContestState(contest, draws.length > 0).label}
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-2xl shadow-lg border border-[#E5E5E5] overflow-hidden">
@@ -242,99 +403,152 @@ export default function RankingPage() {
                     <th className="text-left py-4 px-6 font-semibold text-[#1F1F1F]">Números</th>
                     <th className="text-center py-4 px-6 font-semibold text-[#1F1F1F]">Pontuação</th>
                     <th className="text-left py-4 px-6 font-semibold text-[#1F1F1F]">Ticket</th>
+                    <th className="text-center py-4 px-6 font-semibold text-[#1F1F1F]">Prêmio</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {participations.map((participation, index) => {
-                    const position = index + 1
-                    const hitNumbers = getHitNumbersForParticipation(participation)
-                    const isTopThree = position <= 3
+                  {(() => {
+                    // MODIFIQUEI AQUI - Ordenar por pontuação calculada antes de exibir
+                    const sortedParticipations = [...participations].sort((a, b) => {
+                      const scoreA = getTotalScore(a)
+                      const scoreB = getTotalScore(b)
+                      if (scoreB !== scoreA) return scoreB - scoreA
+                      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                    })
                     
-                    return (
-                      <tr
-                        key={participation.id}
-                        className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${
-                          isTopThree ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : ''
-                        }`}
-                      >
-                        {/* Posição */}
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            {isTopThree ? (
-                              <span className="text-2xl">
-                                {position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉'}
-                              </span>
-                            ) : (
-                              <span className="text-xl font-bold text-[#1F1F1F]/60">
-                                #{position}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        
-                        {/* Participante */}
-                        <td className="py-4 px-6">
-                          <div>
-                            <div className="font-semibold text-[#1F1F1F]">
-                              {participation.user?.name || 'Usuário Anônimo'}
-                            </div>
-                            {participation.user?.email && (
-                              <div className="text-sm text-[#1F1F1F]/60">
-                                {participation.user.email}
+                    // CHATGPT: alterei aqui - Verificar se há ganhadores (participantes com pontuação > 0)
+                    const hasWinners = sortedParticipations.some(p => getTotalScore(p) > 0)
+                    
+                    if (!hasWinners && sortedParticipations.length > 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="py-12 px-6">
+                            <div className="text-center">
+                              <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
                               </div>
-                            )}
-                          </div>
-                        </td>
-                        
-                        {/* Números */}
-                        <td className="py-4 px-6">
-                          <div className="flex flex-wrap gap-2">
-                            {participation.numbers.sort((a, b) => a - b).map((num) => {
-                              const isHit = hitNumbers.includes(num)
-                              const isDrawn = isNumberDrawn(num)
-                              
-                              return (
-                                <span
-                                  key={num}
-                                  className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${
-                                    isHit
-                                      ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
-                                      : isDrawn
-                                      ? 'bg-[#F4C430] text-[#1F1F1F]'
-                                      : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                                  }`}
-                                  title={isHit ? 'Número acertado!' : isDrawn ? 'Número sorteado' : ''}
-                                >
-                                  {num.toString().padStart(2, '0')}
-                                  {isHit && ' ✓'}
+                              <h4 className="text-lg font-bold text-yellow-900 mb-2">
+                                Nenhum Ganhador Ainda
+                              </h4>
+                              <p className="text-yellow-800 text-sm">
+                                Não há participantes com pontuação suficiente para aparecer como ganhadores. Aguarde os sorteios ou verifique se os números foram sorteados corretamente.
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
+                    
+                    return sortedParticipations.map((participation, index) => {
+                      const position = index + 1
+                      const hitNumbers = getHitNumbersForParticipation(participation)
+                      const totalScore = getTotalScore(participation)
+                      const isTopThree = position <= 3
+                      
+                      return (
+                        <tr
+                          key={participation.id}
+                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${
+                            isTopThree ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : ''
+                          }`}
+                        >
+                          {/* Posição */}
+                          <td className="py-4 px-6">
+                            <div className="flex items-center gap-3">
+                              {isTopThree ? (
+                                <span className="text-2xl">
+                                  {position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉'}
                                 </span>
-                              )
-                            })}
-                          </div>
-                        </td>
-                        
-                        {/* Pontuação */}
-                        <td className="py-4 px-6 text-center">
-                          <span
-                            className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${
-                              participation.current_score > 0
-                                ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                                : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                            }`}
-                          >
-                            {participation.current_score}
-                          </span>
-                        </td>
-                        
-                        {/* Ticket */}
-                        <td className="py-4 px-6">
-                          <span className="text-sm font-mono text-[#1F1F1F]/70">
-                            {participation.ticket_code || 'N/A'}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                              ) : (
+                                <span className="text-xl font-bold text-[#1F1F1F]/60">
+                                  #{position}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          
+                          {/* Participante */}
+                          <td className="py-4 px-6">
+                            <div>
+                              <div className="font-semibold text-[#1F1F1F]">
+                                {participation.user?.name || 'Usuário Anônimo'}
+                              </div>
+                              {participation.user?.email && (
+                                <div className="text-sm text-[#1F1F1F]/60">
+                                  {participation.user.email}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          
+                          {/* Números */}
+                          <td className="py-4 px-6">
+                            <div className="flex flex-wrap gap-2">
+                              {participation.numbers.sort((a, b) => a - b).map((num) => {
+                                const isHit = hitNumbers.includes(num)
+                                const isDrawn = isNumberDrawn(num)
+                                
+                                return (
+                                  <span
+                                    key={num}
+                                    className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${
+                                      isHit
+                                        ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
+                                        : isDrawn
+                                        ? 'bg-[#F4C430] text-[#1F1F1F]'
+                                        : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                    }`}
+                                    title={isHit ? 'Número acertado!' : isDrawn ? 'Número sorteado' : ''}
+                                  >
+                                    {num.toString().padStart(2, '0')}
+                                    {isHit && ' ✓'}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
+                          
+                          {/* Pontuação */}
+                          <td className="py-4 px-6 text-center">
+                            <span
+                              className={`inline-block px-4 py-2 rounded-lg font-bold text-lg ${
+                                totalScore > 0
+                                  ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
+                                  : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                              }`}
+                            >
+                              {totalScore}
+                            </span>
+                          </td>
+                          
+                          {/* Ticket */}
+                          <td className="py-4 px-6">
+                            <span className="text-sm font-mono text-[#1F1F1F]/70">
+                              {participation.ticket_code || 'N/A'}
+                            </span>
+                          </td>
+                          
+                          {/* MODIFIQUEI AQUI - Prêmio */}
+                          <td className="py-4 px-6 text-center">
+                            {selectedDrawId && payouts[participation.id] > 0 ? (
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="px-3 py-1 bg-gradient-to-r from-[#F4C430] to-[#FFD700] text-[#1F1F1F] rounded-lg font-bold text-sm">
+                                  🏆 Premiado
+                                </span>
+                                <span className="text-lg font-extrabold text-[#1E7F43]">
+                                  R$ {payouts[participation.id].toFixed(2).replace('.', ',')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-[#1F1F1F]/40">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>

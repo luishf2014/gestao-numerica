@@ -12,6 +12,7 @@ import { Contest, Draw } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -127,11 +128,17 @@ export default function ContestDetailsPage() {
               <div className="flex-1">
                 <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
                   <span className={`px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap ${
-                    contest.status === 'active' 
+                    getContestState(contest, draws.length > 0).phase === 'accepting'
                       ? 'bg-[#3CCB7F]/30 text-white' 
-                      : 'bg-white/20 text-white'
+                      : getContestState(contest, draws.length > 0).phase === 'finished'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-[#F4C430]/30 text-white'
                   }`}>
-                    {contest.status === 'active' ? '● Ativo' : contest.status}
+                    {getContestState(contest, draws.length > 0).phase === 'accepting' 
+                      ? '● Aceitando Participações' 
+                      : getContestState(contest, draws.length > 0).phase === 'finished'
+                      ? '● Finalizado'
+                      : '● ' + getContestState(contest, draws.length > 0).label}
                   </span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-3">
@@ -141,7 +148,7 @@ export default function ContestDetailsPage() {
                   <p className="text-white/90 text-sm sm:text-base md:text-lg max-w-2xl">{contest.description}</p>
                 )}
               </div>
-              {contest.status === 'active' && (
+              {canAcceptParticipations(contest, draws.length > 0) && (
                 <button
                   onClick={() => {
                     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado, senão para página de participação
@@ -155,6 +162,11 @@ export default function ContestDetailsPage() {
                 >
                   Participar Agora
                 </button>
+              )}
+              {!canAcceptParticipations(contest, draws.length > 0) && (
+                <div className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-[#E5E5E5] text-[#1F1F1F]/60 rounded-xl font-bold text-base md:text-lg text-center cursor-not-allowed">
+                  {getContestState(contest, draws.length > 0).label}
+                </div>
               )}
             </div>
           </div>
@@ -197,15 +209,35 @@ export default function ContestDetailsPage() {
           {/* Card Status */}
           <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
             <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-              <div className="p-2 sm:p-3 bg-[#3CCB7F]/10 rounded-lg sm:rounded-xl">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[#3CCB7F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className={`p-2 sm:p-3 rounded-lg sm:rounded-xl ${
+                getContestState(contest, draws.length > 0).phase === 'finished' 
+                  ? 'bg-[#1F1F1F]/10' 
+                  : getContestState(contest, draws.length > 0).phase === 'accepting'
+                  ? 'bg-[#3CCB7F]/10'
+                  : 'bg-[#F4C430]/10'
+              }`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 sm:h-6 sm:w-6 ${
+                  getContestState(contest, draws.length > 0).phase === 'finished' 
+                    ? 'text-[#1F1F1F]/70' 
+                    : getContestState(contest, draws.length > 0).phase === 'accepting'
+                    ? 'text-[#3CCB7F]'
+                    : 'text-[#F4C430]'
+                }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <h3 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Status</h3>
             </div>
-            <span className="px-3 sm:px-4 py-1.5 sm:py-2 bg-[#3CCB7F]/20 text-[#1E7F43] rounded-lg text-base sm:text-lg font-bold inline-block">
-              {contest.status}
+            <span className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-base sm:text-lg font-bold inline-block ${
+              getContestState(contest, draws.length > 0).phase === 'finished'
+                ? 'bg-[#1F1F1F]/10 text-[#1F1F1F]/70'
+                : getContestState(contest, draws.length > 0).phase === 'accepting'
+                ? 'bg-[#3CCB7F]/20 text-[#1E7F43]'
+                : getContestState(contest, draws.length > 0).phase === 'awaiting_result'
+                ? 'bg-[#F4C430]/20 text-[#1F1F1F]'
+                : 'bg-[#E5E5E5] text-[#1F1F1F]/60'
+            }`}>
+              {getContestState(contest, draws.length > 0).label}
             </span>
           </div>
         </div>

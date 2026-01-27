@@ -36,6 +36,11 @@ export interface Contest {
   end_date: string
   status: ContestStatus
   participation_value?: number
+  // MODIFIQUEI AQUI - Percentuais de premiação configuráveis por concurso
+  first_place_pct?: number
+  second_place_pct?: number
+  lowest_place_pct?: number
+  admin_fee_pct?: number
   created_by: string
   created_at: string
   updated_at: string

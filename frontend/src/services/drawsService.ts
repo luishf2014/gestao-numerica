@@ -7,6 +7,8 @@
 import { supabase } from '../lib/supabase'
 import { Draw } from '../types'
 import { generateDrawCode } from '../utils/drawCodeGenerator'
+import { updateContest } from './contestsService'
+import { reprocessContestAfterDraw, reprocessDrawResults } from './reprocessService'
 
 /**
  * Lista todos os sorteios de um concurso
@@ -132,6 +134,10 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error('É necessário informar a data do sorteio')
   }
 
+  // CHATGPT: alterei aqui - Verificar se é o primeiro sorteio ANTES de inserir
+  const existingDraws = await listDrawsByContestId(input.contest_id)
+  const isFirstDraw = existingDraws.length === 0
+
   // Gerar código se não fornecido
   const code = input.code || generateDrawCode()
 
@@ -187,6 +193,44 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error(`Erro ao criar sorteio: ${error.message}`)
   }
 
+  // CHATGPT: alterei aqui - Se este é o primeiro sorteio, atualizar status do concurso para 'finished'
+  if (isFirstDraw && data) {
+    try {
+      console.log(`[drawsService] Primeiro sorteio detectado para concurso ${input.contest_id}. Atualizando status...`)
+      const updatedContest = await updateContest(input.contest_id, { status: 'finished' })
+      console.log(`[drawsService] Status do concurso ${input.contest_id} atualizado para 'finished' após primeiro sorteio. Status atual:`, updatedContest.status)
+      
+      // CHATGPT: alterei aqui - Aguardar um pouco para garantir propagação
+      await new Promise(resolve => setTimeout(resolve, 300))
+    } catch (statusUpdateError) {
+      // Log do erro mas não falhar a criação do sorteio
+      console.error('[drawsService] Erro ao atualizar status do concurso:', statusUpdateError)
+      // Tentar novamente após um delay
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        await updateContest(input.contest_id, { status: 'finished' })
+        console.log(`[drawsService] Status atualizado na segunda tentativa para concurso ${input.contest_id}`)
+      } catch (retryError) {
+        console.error('[drawsService] Erro na segunda tentativa de atualizar status:', retryError)
+      }
+    }
+  }
+
+  // CHATGPT: alterei aqui - Reprocessar concurso após criar sorteio (recalcular acertos, pontuações e rateio)
+  if (data) {
+    try {
+      console.log(`[drawsService] Iniciando reprocessamento do concurso ${input.contest_id} após criar sorteio...`)
+      await reprocessContestAfterDraw(input.contest_id)
+      // MODIFIQUEI AQUI - Processar prêmios do sorteio recém-criado
+      await reprocessDrawResults(data.id)
+      console.log(`[drawsService] Reprocessamento concluído para concurso ${input.contest_id}`)
+    } catch (reprocessError) {
+      console.error('[drawsService] Erro ao reprocessar concurso após criar sorteio:', reprocessError)
+      // Não falhar a criação do sorteio se o reprocessamento falhar
+      // O reprocessamento pode ser executado manualmente depois se necessário
+    }
+  }
+
   return data
 }
 
@@ -233,6 +277,20 @@ export async function updateDraw(id: string, input: UpdateDrawInput): Promise<Dr
     throw new Error(`Erro ao atualizar sorteio: ${error.message}`)
   }
 
+  // MODIFIQUEI AQUI - Reprocessar concurso após atualizar sorteio
+  if (data) {
+    try {
+      console.log(`[drawsService] Iniciando reprocessamento do concurso ${data.contest_id} após atualizar sorteio...`)
+      await reprocessContestAfterDraw(data.contest_id)
+      // MODIFIQUEI AQUI - Reprocessar prêmios do sorteio atualizado
+      await reprocessDrawResults(id)
+      console.log(`[drawsService] Reprocessamento concluído para concurso ${data.contest_id}`)
+    } catch (reprocessError) {
+      console.error('[drawsService] Erro ao reprocessar concurso após atualizar sorteio:', reprocessError)
+      // Não falhar a atualização do sorteio se o reprocessamento falhar
+    }
+  }
+
   return data
 }
 
@@ -244,6 +302,19 @@ export async function updateDraw(id: string, input: UpdateDrawInput): Promise<Dr
  * Esta função existe para casos especiais de correção.
  */
 export async function deleteDraw(id: string): Promise<void> {
+  // MODIFIQUEI AQUI - Buscar contest_id antes de deletar para reprocessar depois
+  const { data: drawData, error: fetchError } = await supabase
+    .from('draws')
+    .select('contest_id')
+    .eq('id', id)
+    .single()
+
+  if (fetchError) {
+    throw new Error(`Erro ao buscar sorteio: ${fetchError.message}`)
+  }
+
+  const contestId = drawData?.contest_id
+
   const { error } = await supabase
     .from('draws')
     .delete()
@@ -254,5 +325,18 @@ export async function deleteDraw(id: string): Promise<void> {
       throw new Error('Você não tem permissão para deletar este sorteio')
     }
     throw new Error(`Erro ao deletar sorteio: ${error.message}`)
+  }
+
+  // MODIFIQUEI AQUI - Reprocessar concurso após deletar sorteio
+  if (contestId) {
+    try {
+      console.log(`[drawsService] Iniciando reprocessamento do concurso ${contestId} após deletar sorteio...`)
+      // MODIFIQUEI AQUI - Payouts do sorteio deletado serão removidos automaticamente pelo CASCADE
+      await reprocessContestAfterDraw(contestId)
+      console.log(`[drawsService] Reprocessamento concluído para concurso ${contestId}`)
+    } catch (reprocessError) {
+      console.error('[drawsService] Erro ao reprocessar concurso após deletar sorteio:', reprocessError)
+      // Não falhar a deleção do sorteio se o reprocessamento falhar
+    }
   }
 }

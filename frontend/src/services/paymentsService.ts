@@ -49,6 +49,54 @@ export async function createCashPayment(params: {
 }
 
 /**
+ * Cria um registro de pagamento Pix para uma participação
+ * MODIFIQUEI AQUI - Função para criar pagamento Pix (aguardando confirmação)
+ * 
+ * @param params Parâmetros do pagamento Pix
+ * @returns Pagamento criado
+ */
+export async function createPixPaymentRecord(params: {
+  participationId: string
+  amount: number
+  externalId: string // ID do pagamento no Asaas
+  qrCodeData?: {
+    payload: string
+    expirationDate: string
+  }
+}): Promise<Payment> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    throw new Error('Usuário não autenticado')
+  }
+
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      participation_id: params.participationId,
+      amount: params.amount,
+      status: 'pending', // Pagamento Pix inicia como pendente
+      payment_method: 'pix',
+      external_id: params.externalId,
+      external_data: params.qrCodeData ? {
+        payload: params.qrCodeData.payload,
+        expirationDate: params.qrCodeData.expirationDate,
+      } : null,
+    })
+    .select('*')
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '42501') {
+      throw new Error('Você não tem permissão para criar este pagamento')
+    }
+    throw new Error(`Erro ao registrar pagamento: ${error.message}`)
+  }
+
+  return data
+}
+
+/**
  * Busca pagamentos de uma participação específica
  * MODIFIQUEI AQUI - Função para verificar se participação já tem pagamento registrado
  * 

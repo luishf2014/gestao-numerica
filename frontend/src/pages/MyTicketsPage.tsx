@@ -7,11 +7,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listMyParticipations } from '../services/participationsService'
+import { listDrawsByContestId } from '../services/drawsService'
 import { Participation, Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { useAuth } from '../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import ContestStatusBadge from '../components/ContestStatusBadge'
 
 interface ParticipationWithContest extends Participation {
   contest: Contest | null
@@ -21,6 +23,7 @@ export default function MyTicketsPage() {
   const navigate = useNavigate()
   const { user, loading: authLoading } = useAuth()
   const [participations, setParticipations] = useState<ParticipationWithContest[]>([])
+  const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,6 +42,22 @@ export default function MyTicketsPage() {
         setError(null)
         const data = await listMyParticipations()
         setParticipations(data)
+        
+        // MODIFIQUEI AQUI - Verificar sorteios para cada concurso
+        const drawsMap: Record<string, boolean> = {}
+        const uniqueContestIds = [...new Set(data.map(p => p.contest_id).filter(Boolean))]
+        await Promise.all(
+          uniqueContestIds.map(async (contestId) => {
+            try {
+              const draws = await listDrawsByContestId(contestId)
+              drawsMap[contestId] = draws.length > 0
+            } catch (err) {
+              console.error(`Erro ao verificar sorteios do concurso ${contestId}:`, err)
+              drawsMap[contestId] = false
+            }
+          })
+        )
+        setContestsWithDraws(drawsMap)
       } catch (err) {
         console.error('[MyTicketsPage] Erro ao carregar participações:', err)
         const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar seus tickets'
@@ -178,13 +197,11 @@ export default function MyTicketsPage() {
                         </span>
                       )}
                       {participation.contest && (
-                        <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                          participation.contest.status === 'active' 
-                            ? 'bg-[#1E7F43]/10 text-[#1E7F43]' 
-                            : 'bg-[#E5E5E5] text-[#1F1F1F]/60'
-                        }`}>
-                          {participation.contest.status === 'active' ? 'Concurso Ativo' : participation.contest.status}
-                        </span>
+                        <ContestStatusBadge 
+                          contest={participation.contest} 
+                          hasDraws={contestsWithDraws[participation.contest.id] || false}
+                          variant="card"
+                        />
                       )}
                     </div>
                     <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">

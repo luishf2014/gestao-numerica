@@ -54,7 +54,11 @@ BEGIN
   )
   VALUES (
     NEW.id,                                    -- ID do usuário do auth.users
-    NEW.email,                                 -- Email do usuário
+    -- usar o email real enviado no metadata (fallback para NEW.email)
+    COALESCE(
+      NULLIF(NEW.raw_user_meta_data->>'email', ''),  -- email real digitado no cadastro
+      NEW.email                                       -- fallback: email do auth (telefone@dezaqui.local)
+    ),                                 -- Email do usuário
     COALESCE(
       NEW.raw_user_meta_data->>'full_name',   -- Nome do metadata (enviado pelo frontend)
       NEW.raw_user_meta_data->>'name',        -- Fallback para 'name' se 'full_name' não existir

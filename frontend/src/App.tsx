@@ -4,10 +4,12 @@ import Home from './pages/Home'
 import ContestsListPage from './pages/ContestsListPage'
 import ContestDetailsPage from './pages/ContestDetailsPage'
 import JoinContestPage from './pages/JoinContestPage'
+import CheckoutPage from './pages/CheckoutPage'
 import LoginPage from './pages/LoginPage'
 import MyTicketsPage from './pages/MyTicketsPage'
 import RankingPage from './pages/RankingPage'
 import RankingsPage from './pages/RankingsPage'
+import SettingsPage from './pages/SettingsPage'
 // Importações do guard e páginas admin
 import RequireAdmin from './routes/RequireAdmin'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -32,12 +34,16 @@ function App() {
           <Route path="/contests/:id" element={<ContestDetailsPage />} />
           {/* Rota de participação adicionada */}
           <Route path="/contests/:id/join" element={<JoinContestPage />} />
+          {/* MODIFIQUEI AQUI - Rota de checkout */}
+          <Route path="/contests/:id/checkout" element={<CheckoutPage />} />
           {/* MODIFIQUEI AQUI - Rota de Ranking */}
           <Route path="/contests/:id/ranking" element={<RankingPage />} />
           {/* MODIFIQUEI AQUI - Rota de Rankings Gerais */}
           <Route path="/rankings" element={<RankingsPage />} />
           {/* MODIFIQUEI AQUI - Rota de Meus Tickets */}
           <Route path="/my-tickets" element={<MyTicketsPage />} />
+          {/* MODIFIQUEI AQUI - Rota de Configurações */}
+          <Route path="/settings" element={<SettingsPage />} />
           
           {/* CHATGPT: alterei aqui - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
           <Route path="/admin" element={<RequireAdmin />}>

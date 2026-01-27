@@ -8,12 +8,13 @@
  */
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { listActiveContests, getContestById } from '../services/contestsService'
+import { listActiveContests, listFinishedContests, getContestById } from '../services/contestsService'
 import { getContestRanking, listMyParticipations } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { Contest, Participation, Draw } from '../types'
-import { getHitNumbers } from '../utils/rankingHelpers'
+import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
 import { useAuth } from '../contexts/AuthContext'
+import ContestStatusBadge from '../components/ContestStatusBadge'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
@@ -21,9 +22,14 @@ interface ParticipationWithUser extends Participation {
   user: { id: string; name: string; email: string } | null
 }
 
+type TabType = 'active' | 'history'
+
 export default function RankingsPage() {
   const { user, isAdmin, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<TabType>('active')
+  const [activeContests, setActiveContests] = useState<Contest[]>([])
+  const [finishedContests, setFinishedContests] = useState<Contest[]>([])
   const [availableContests, setAvailableContests] = useState<Contest[]>([])
   const [selectedContestId, setSelectedContestId] = useState<string>('')
   const [selectedContest, setSelectedContest] = useState<Contest | null>(null)
@@ -33,7 +39,7 @@ export default function RankingsPage() {
   const [loadingRanking, setLoadingRanking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // MODIFIQUEI AQUI - Carregar concursos disponíveis baseado no tipo de usuário
+  // CHATGPT: alterei aqui - Carregar concursos ativos e finalizados baseado no tipo de usuário
   useEffect(() => {
     async function loadAvailableContests() {
       if (authLoading) return
@@ -43,17 +49,21 @@ export default function RankingsPage() {
         setError(null)
 
         if (isAdmin) {
-          // Admin: ver todos os concursos ativos
-          const contests = await listActiveContests()
-          setAvailableContests(contests)
+          // Admin: ver todos os concursos ativos e finalizados
+          const [activeData, finishedData] = await Promise.all([
+            listActiveContests(),
+            listFinishedContests(),
+          ])
+          setActiveContests(activeData)
+          setFinishedContests(finishedData)
         } else if (user) {
-          // Usuário comum: ver apenas concursos onde está participando
+          // Usuário comum: ver apenas concursos onde está participando (ativos + finalizados)
           const myParticipations = await listMyParticipations()
           // Extrair IDs únicos de concursos
           const contestIds = [...new Set(myParticipations.map(p => p.contest_id).filter(Boolean))]
           
           // Buscar detalhes dos concursos
-          const contests = await Promise.all(
+          const allContests = await Promise.all(
             contestIds.map(async (contestId) => {
               try {
                 return await getContestById(contestId)
@@ -64,7 +74,13 @@ export default function RankingsPage() {
             })
           )
           
-          setAvailableContests(contests.filter((c): c is Contest => c !== null))
+          const validContests = allContests.filter((c): c is Contest => c !== null)
+          // Separar em ativos e finalizados
+          const active = validContests.filter(c => c.status === 'active')
+          const finished = validContests.filter(c => c.status === 'finished')
+          
+          setActiveContests(active)
+          setFinishedContests(finished)
         } else {
           // Não autenticado: redirecionar para login
           navigate('/login')
@@ -80,6 +96,20 @@ export default function RankingsPage() {
 
     loadAvailableContests()
   }, [user, isAdmin, authLoading, navigate])
+
+  // CHATGPT: alterei aqui - Atualizar lista de concursos disponíveis baseado na aba selecionada
+  useEffect(() => {
+    const currentContests = activeTab === 'active' ? activeContests : finishedContests
+    setAvailableContests(currentContests)
+    
+    // Limpar seleção se o concurso selecionado não estiver na lista atual
+    if (selectedContestId && !currentContests.find(c => c.id === selectedContestId)) {
+      setSelectedContestId('')
+      setSelectedContest(null)
+      setRanking([])
+      setDraws([])
+    }
+  }, [activeTab, activeContests, finishedContests, selectedContestId])
 
   // MODIFIQUEI AQUI - Carregar ranking quando um concurso for selecionado
   useEffect(() => {
@@ -133,21 +163,14 @@ export default function RankingsPage() {
     })
   }
 
-  // Obter números acertados de uma participação
+  // MODIFIQUEI AQUI - Obter números acertados de uma participação (todos os sorteios)
   const getHitNumbersForParticipation = (participation: Participation, draws: Draw[]): number[] => {
-    if (draws.length === 0) return []
-    // Usar o último sorteio para destacar números acertados
-    const lastDraw = draws[0] // Já está ordenado por data (mais recente primeiro)
-    return getHitNumbers(lastDraw.numbers, participation.numbers)
+    return getAllHitNumbers(participation.numbers, draws)
   }
 
-  // Verificar se um número foi sorteado
-  const isNumberDrawn = (number: number, draws: Draw[]): boolean => {
-    const allNumbers = new Set<number>()
-    draws.forEach(draw => {
-      draw.numbers.forEach(num => allNumbers.add(num))
-    })
-    return allNumbers.has(number)
+  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios
+  const getTotalScore = (participation: Participation, draws: Draw[]): number => {
+    return calculateTotalScore(participation.numbers, draws)
   }
 
   if (authLoading || loading) {
@@ -240,6 +263,32 @@ export default function RankingsPage() {
         </div>
       </div>
 
+      {/* CHATGPT: alterei aqui - Abas para alternar entre Ativos e Histórico */}
+      <div className="container mx-auto px-2 sm:px-4 mb-6 max-w-7xl">
+        <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              activeTab === 'active'
+                ? 'bg-[#1E7F43] text-white shadow-md'
+                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+            }`}
+          >
+            Ativos ({activeContests.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
+              activeTab === 'history'
+                ? 'bg-[#1E7F43] text-white shadow-md'
+                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+            }`}
+          >
+            Histórico ({finishedContests.length})
+          </button>
+        </div>
+      </div>
+
       {/* Conteúdo Principal */}
       <div className="container mx-auto px-2 sm:px-4 pb-6 sm:pb-8 flex-1 max-w-7xl">
         {error && (
@@ -248,7 +297,7 @@ export default function RankingsPage() {
           </div>
         )}
 
-        {/* MODIFIQUEI AQUI - Seletor de Concurso */}
+        {/* CHATGPT: alterei aqui - Seletor de Concurso */}
         <div className="mb-6 sm:mb-8">
           <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg">
             <label htmlFor="contest-select" className="block text-sm sm:text-base font-semibold text-[#1F1F1F] mb-3">
@@ -263,15 +312,19 @@ export default function RankingsPage() {
               <option value="">-- Selecione um concurso --</option>
               {availableContests.map((contest) => (
                 <option key={contest.id} value={contest.id}>
-                  {contest.name} {contest.status === 'active' ? '(Ativo)' : ''}
+                  {contest.name} {contest.status === 'active' ? '(Ativo)' : contest.status === 'finished' ? '(Finalizado)' : ''}
                 </option>
               ))}
             </select>
             {availableContests.length === 0 && (
               <p className="mt-3 text-sm text-[#1F1F1F]/60">
-                {isAdmin 
-                  ? 'Nenhum concurso ativo no momento.'
-                  : 'Você ainda não está participando de nenhum concurso.'}
+                {activeTab === 'active'
+                  ? (isAdmin 
+                      ? 'Nenhum concurso ativo no momento.'
+                      : 'Você ainda não está participando de nenhum concurso ativo.')
+                  : (isAdmin
+                      ? 'Nenhum concurso finalizado ainda.'
+                      : 'Você ainda não participou de nenhum concurso finalizado.')}
               </p>
             )}
           </div>
@@ -303,13 +356,11 @@ export default function RankingsPage() {
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3 flex-wrap">
-                    <span className={`px-2 sm:px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                      selectedContest.status === 'active' 
-                        ? 'bg-[#1E7F43]/20 text-[#1E7F43]' 
-                        : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      ● {selectedContest.status === 'active' ? 'Concurso Ativo' : 'Concurso Encerrado'}
-                    </span>
+                    <ContestStatusBadge 
+                      contest={selectedContest} 
+                      hasDraws={draws.length > 0}
+                      variant="card"
+                    />
                     <span className="px-2 sm:px-3 py-1 bg-[#F4C430]/20 text-[#1F1F1F] rounded-full text-xs font-semibold whitespace-nowrap">
                       {ranking.length} {ranking.length === 1 ? 'Participante' : 'Participantes'}
                     </span>
@@ -349,7 +400,37 @@ export default function RankingsPage() {
 
               {/* Top 3 Podium */}
               {ranking.length > 0 && (() => {
-                const topThree = ranking.slice(0, 3)
+                // MODIFIQUEI AQUI - Ordenar por pontuação calculada antes de pegar top 3
+                const sortedRanking = [...ranking].sort((a, b) => {
+                  const scoreA = getTotalScore(a, draws)
+                  const scoreB = getTotalScore(b, draws)
+                  if (scoreB !== scoreA) return scoreB - scoreA
+                  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                })
+                const topThree = sortedRanking.slice(0, 3)
+                const hasWinners = topThree.length > 0 && topThree.some(p => getTotalScore(p, draws) > 0)
+                
+                // CHATGPT: alterei aqui - Mensagem explícita quando não houver ganhadores
+                if (!hasWinners) {
+                  return (
+                    <div className="rounded-xl sm:rounded-2xl border-2 border-yellow-200 bg-yellow-50 p-4 sm:p-6 mb-4">
+                      <div className="text-center">
+                        <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full mb-3 sm:mb-4">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                        </div>
+                        <h4 className="text-base sm:text-lg font-bold text-yellow-900 mb-2">
+                          Nenhum Ganhador Ainda
+                        </h4>
+                        <p className="text-yellow-800 text-xs sm:text-sm">
+                          Ainda não há participantes com pontuação suficiente para aparecer no pódio. Aguarde os sorteios!
+                        </p>
+                      </div>
+                    </div>
+                  )
+                }
+                
                 return topThree.length > 0 && (
                   <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-gradient-to-br from-[#F9F9F9] to-white p-4 sm:p-6 mb-4">
                     <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -372,7 +453,7 @@ export default function RankingsPage() {
                             {topThree[1].user?.name || 'Anônimo'}
                           </div>
                           <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                            {topThree[1].current_score} pts
+                            {getTotalScore(topThree[1], draws)} pts
                           </div>
                         </div>
                       )}
@@ -386,7 +467,7 @@ export default function RankingsPage() {
                             {topThree[0].user?.name || 'Anônimo'}
                           </div>
                           <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">
-                            {topThree[0].current_score} pts
+                            {getTotalScore(topThree[0], draws)} pts
                           </div>
                         </div>
                       )}
@@ -400,7 +481,7 @@ export default function RankingsPage() {
                             {topThree[2].user?.name || 'Anônimo'}
                           </div>
                           <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                            {topThree[2].current_score} pts
+                            {getTotalScore(topThree[2], draws)} pts
                           </div>
                         </div>
                       )}
@@ -423,74 +504,79 @@ export default function RankingsPage() {
                     </h4>
                   </div>
                   <div className="space-y-2">
-                    {ranking.slice(0, 10).map((participation, index) => {
-                      const position = index + 1
-                      const hitNumbers = getHitNumbersForParticipation(participation, draws)
-                      const isTopThree = position <= 3
+                    {(() => {
+                      // MODIFIQUEI AQUI - Ordenar por pontuação calculada antes de exibir
+                      const sortedRanking = [...ranking].sort((a, b) => {
+                        const scoreA = getTotalScore(a, draws)
+                        const scoreB = getTotalScore(b, draws)
+                        if (scoreB !== scoreA) return scoreB - scoreA
+                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                      })
+                      return sortedRanking.slice(0, 10).map((participation, index) => {
+                        const position = index + 1
+                        const hitNumbers = getHitNumbersForParticipation(participation, draws)
+                        const totalScore = getTotalScore(participation, draws)
+                        const isTopThree = position <= 3
 
-                      return (
-                        <div
-                          key={participation.id}
-                          className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                            isTopThree
-                              ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
-                              : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="flex-shrink-0">
-                              {isTopThree ? (
-                                <span className="text-xl sm:text-2xl">
-                                  {position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉'}
-                                </span>
-                              ) : (
-                                <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">
-                                  #{position}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-[#1F1F1F] truncate">
-                                {participation.user?.name || 'Usuário Anônimo'}
-                              </div>
-                              {participation.user?.email && (
-                                <div className="text-xs text-[#1F1F1F]/60 truncate">
-                                  {participation.user.email}
-                                </div>
-                              )}
-                            </div>
-                            {hitNumbers.length > 0 && (
-                              <div className="hidden sm:flex gap-1 flex-wrap">
-                                {hitNumbers.slice(0, 3).map((num) => (
-                                  <span
-                                    key={num}
-                                    className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold"
-                                  >
-                                    {num.toString().padStart(2, '0')}✓
+                        return (
+                          <div
+                            key={participation.id}
+                            className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                              isTopThree
+                                ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
+                                : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="flex-shrink-0">
+                                {isTopThree ? (
+                                  <span className="text-xl sm:text-2xl">
+                                    {position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉'}
                                   </span>
-                                ))}
-                                {hitNumbers.length > 3 && (
-                                  <span className="px-2 py-1 bg-[#1E7F43]/50 text-white rounded text-xs font-bold">
-                                    +{hitNumbers.length - 3}
+                                ) : (
+                                  <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">
+                                    #{position}
                                   </span>
                                 )}
                               </div>
-                            )}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-[#1F1F1F] truncate">
+                                  {participation.user?.name || 'Usuário Anônimo'}
+                                </div>
+                                {participation.user?.email && (
+                                  <div className="text-xs text-[#1F1F1F]/60 truncate">
+                                    {participation.user.email}
+                                  </div>
+                                )}
+                              </div>
+                              {hitNumbers.length > 0 && (
+                                <div className="hidden sm:flex gap-1 flex-wrap pr-2">
+                                  {hitNumbers.map((num) => (
+                                    <span
+                                      key={num}
+                                      className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold"
+                                    >
+                                      {num.toString().padStart(2, '0')}✓
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span
+                                className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
+                                  totalScore > 0
+                                    ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
+                                    : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                }`}
+                              >
+                                {totalScore}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <span
-                              className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
-                                participation.current_score > 0
-                                  ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                                  : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                              }`}
-                            >
-                              {participation.current_score}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })
+                    })()}
                     {ranking.length > 10 && (
                       <div className="text-center pt-2">
                         <Link

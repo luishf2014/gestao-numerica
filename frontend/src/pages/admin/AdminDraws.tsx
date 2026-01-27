@@ -316,7 +316,35 @@ export default function AdminDraws() {
       if (editingDraw) {
         await updateDraw(editingDraw.id, input as UpdateDrawInput)
       } else {
-        await createDraw(input as CreateDrawInput)
+        const createInput = input as CreateDrawInput
+        const createdDraw = await createDraw(createInput)
+        console.log('[AdminDraws] Sorteio criado:', createdDraw.id)
+        
+        // CHATGPT: alterei aqui - Aguardar um pouco para garantir que o trigger SQL e a atualização do status sejam propagados
+        await new Promise(resolve => setTimeout(resolve, 800))
+        
+        // CHATGPT: alterei aqui - Recarregar concursos após criar sorteio para atualizar status
+        // Forçar recarregamento completo dos dados
+        setLoading(true)
+        try {
+          const contestsData = await listAllContests()
+          console.log('[AdminDraws] Concursos recarregados após criar sorteio. Total:', contestsData.length)
+          
+          // Verificar se o status foi atualizado
+          const updatedContest = contestsData.find(c => c.id === createInput.contest_id)
+          if (updatedContest) {
+            console.log(`[AdminDraws] Status do concurso ${createInput.contest_id} após criar sorteio:`, updatedContest.status)
+            if (updatedContest.status !== 'finished') {
+              console.warn(`[AdminDraws] ATENÇÃO: Status do concurso não foi atualizado para 'finished'. Status atual: ${updatedContest.status}`)
+            }
+          }
+          
+          setContests(contestsData)
+        } catch (err) {
+          console.error('[AdminDraws] Erro ao recarregar concursos:', err)
+        } finally {
+          setLoading(false)
+        }
       }
 
       await loadDraws()

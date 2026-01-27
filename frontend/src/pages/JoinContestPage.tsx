@@ -7,23 +7,25 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
-import { createParticipation } from '../services/participationsService'
-import { Contest } from '../types'
+import { listDrawsByContestId } from '../services/drawsService'
+// MODIFIQUEI AQUI - Removido import de createParticipation (agora feito no checkout)
+import { Contest, Draw } from '../types'
 import NumberPicker from '../components/NumberPicker'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
+import ContestStatusBadge from '../components/ContestStatusBadge'
 
 export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user, loading: authLoading } = useAuth()
   const [contest, setContest] = useState<Contest | null>(null)
+  const [draws, setDraws] = useState<Draw[]>([])
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   useEffect(() => {
     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado
@@ -47,19 +49,28 @@ export default function JoinContestPage() {
       try {
         setLoading(true)
         setError(null)
-        const contestData = await getContestById(id)
+        
+        // MODIFIQUEI AQUI - Carregar concurso e sorteios em paralelo para verificar se há sorteios
+        const [contestData, drawsData] = await Promise.all([
+          getContestById(id),
+          listDrawsByContestId(id || ''),
+        ])
 
         if (!contestData) {
           setError('Concurso não encontrado')
           return
         }
 
-        if (contestData.status !== 'active') {
-          setError('Este concurso não está ativo para participação')
+        // MODIFIQUEI AQUI - Verificar se o concurso ainda aceita participações usando helper
+        const hasDraws = drawsData.length > 0
+        if (!canAcceptParticipations(contestData, hasDraws)) {
+          const state = getContestState(contestData, hasDraws)
+          setError(state.message)
           return
         }
 
         setContest(contestData)
+        setDraws(drawsData)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao carregar concurso')
       } finally {
@@ -94,31 +105,10 @@ export default function JoinContestPage() {
       return
     }
 
-    try {
-      setSubmitting(true)
-      setError(null)
-
-      const participation = await createParticipation({
-        contestId: id,
-        numbers: selectedNumbers,
-      })
-
-      setSuccess(true)
-      
-      // MODIFIQUEI AQUI - Mostrar código/ticket se disponível
-      if (participation.ticket_code) {
-        console.log('[JoinContestPage] Código/ticket gerado:', participation.ticket_code)
-      }
-      
-      // Redirecionar após 2 segundos
-      setTimeout(() => {
-        navigate(`/contests/${id}`)
-      }, 2000)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao criar participação')
-    } finally {
-      setSubmitting(false)
-    }
+    // MODIFIQUEI AQUI - Redirecionar para página de checkout ao invés de criar participação diretamente
+    navigate(`/contests/${id}/checkout`, {
+      state: { selectedNumbers },
+    })
   }
 
   // MODIFIQUEI AQUI - Mostrar loading apenas enquanto carrega o concurso ou autenticação
@@ -185,29 +175,6 @@ export default function JoinContestPage() {
 
   if (!contest) return null
 
-  if (success) {
-    return (
-      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
-        <Header />
-        <div className="flex items-center justify-center flex-1 px-4">
-          <div className="text-center rounded-3xl border border-[#E5E5E5] bg-white p-8 shadow-xl">
-            <div className="text-[#1E7F43] text-4xl mb-4">✓</div>
-            <h2 className="text-2xl font-extrabold text-[#1F1F1F] mb-2">
-              Participação criada com sucesso!
-            </h2>
-            <p className="text-[#1F1F1F]/70 mb-4">
-              Status: <span className="font-semibold text-[#1E7F43]">Pendente</span>
-            </p>
-            <p className="text-sm text-[#1F1F1F]/60">
-              Redirecionando para o concurso...
-            </p>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
@@ -246,8 +213,12 @@ export default function JoinContestPage() {
               </div>
               <div>
                 <span className="text-[#1F1F1F]/60">Status:</span>
-                <span className="ml-2 px-3 py-1 bg-[#3CCB7F]/20 text-[#1E7F43] rounded-full text-xs font-semibold">
-                  {contest.status}
+                <span className="ml-2">
+                  <ContestStatusBadge 
+                    contest={contest} 
+                    hasDraws={draws.length > 0}
+                    variant="compact"
+                  />
                 </span>
               </div>
             </div>
@@ -276,21 +247,17 @@ export default function JoinContestPage() {
           <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
             <button
               type="submit"
-              disabled={
-                submitting ||
-                selectedNumbers.length !== contest.numbers_per_participation
-              }
+              disabled={selectedNumbers.length !== contest.numbers_per_participation}
               className={`
                 w-full sm:flex-1 py-3 px-6 rounded-xl font-semibold transition-colors shadow-lg text-sm sm:text-base
                 ${
-                  submitting ||
                   selectedNumbers.length !== contest.numbers_per_participation
                     ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
                     : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F]'
                 }
               `}
             >
-              {submitting ? 'Criando participação...' : 'Confirmar participação'}
+              Continuar para Pagamento
             </button>
             <Link
               to={`/contests/${id}`}

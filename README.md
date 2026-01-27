@@ -52,7 +52,7 @@ Construir uma solução:
 1. **Clone o repositório**
    ```bash
    git clone <repo-url>
-   cd gestao-numerica
+   cd dezaqui
    ```
 
 2. **Configure o Supabase**
@@ -79,6 +79,16 @@ Construir uma solução:
    ```
 
 O frontend estará disponível em `http://localhost:3000`
+
+### Migrações Importantes
+
+**⚠️ ATENÇÃO:** Execute todas as migrações na ordem correta conforme documentado em `backend/migrations/README.md`.
+
+**Migração Crítica:**
+- **`015_auto_finish_contest_on_draw.sql`** - Finalização automática de concursos ao criar primeiro sorteio
+  - Cria trigger SQL que atualiza automaticamente o status do concurso para `finished` quando o primeiro sorteio é criado
+  - Garante consistência mesmo com inserções diretas no banco
+  - **Recomendado:** Execute esta migração para garantir comportamento consistente
 
 ---
 
@@ -140,12 +150,23 @@ gestao-numerica/
 * **Criação e gestão de concursos**
   * CRUD completo de concursos
   * Configuração de regras (universo numérico, quantidade de números, datas)
+  * Filtros por status (Todos, Ativos, Rascunhos, Finalizados)
+  * **Finalização automática ao criar primeiro sorteio** ✅ **IMPLEMENTADO**
+* **Gestão de sorteios** ✅ **IMPLEMENTADO**
+  * Criação e edição de sorteios
+  * Seleção manual ou aleatória de números
+  * Validação de quantidade de números
+  * Geração de código único para sorteios
+  * **Finalização automática do concurso ao criar primeiro sorteio**
+  * Atualização automática da lista de concursos após criar sorteio
 * **Gestão de participantes**
   * Listagem completa com busca e filtros
   * Visualização de histórico de participações por usuário
-* **Ativação de participações**
+* **Ativação de participações** ✅ **IMPLEMENTADO**
   * Automática (Pix) - **Aguardando FASE 3**
   * Manual (pagamentos offline) - ✅ **Implementado**
+  * **Atualização automática da lista após ativação** ✅ **IMPLEMENTADO**
+  * Remoção automática de participações ativadas da lista
 * **Relatórios e análises** ✅ **Implementado**
   * Relatórios completos, de arrecadação e de rateio
   * Exportação em CSV, PDF e Excel
@@ -167,6 +188,17 @@ gestao-numerica/
 * Múltiplos sorteios por concurso
 * Datas e horários configuráveis
 * Histórico **imutável** de todos os sorteios
+* **Finalização automática de concursos** ✅ **IMPLEMENTADO**
+  * Quando o primeiro sorteio é criado, o concurso é automaticamente finalizado
+  * Status muda de `active` para `finished` automaticamente
+  * Participações são bloqueadas automaticamente após o primeiro sorteio
+  * Trigger SQL (`015_auto_finish_contest_on_draw.sql`) garante consistência mesmo com inserções diretas no banco
+  * Validação server-side impede participações em concursos finalizados
+  * Atualização automática da UI em todas as páginas (admin e usuário)
+* **Seção de histórico de concursos finalizados** ✅ **IMPLEMENTADO**
+  * Aba "Histórico" na página de concursos (`/contests`)
+  * Visualização de concursos finalizados com seus resultados
+  * Separação clara entre concursos ativos e finalizados
 * Reprocessamento automático de:
 
   * Acertos
@@ -175,23 +207,107 @@ gestao-numerica/
 
 ---
 
-## 🏆 Ranking
+## 🏆 Ranking e Premiação Automática
 
-* Atualização automática após cada sorteio
-* Destaque visual dos números sorteados
-* Classificação baseada na quantidade de acertos
-* Ranking sempre reflete o **estado atual do concurso**
+### Sistema de Ranking
+
+* **Atualização automática após cada sorteio** ✅ **IMPLEMENTADO**
+  * Recalcula acertos de todas as participações automaticamente
+  * Atualiza pontuações (`current_score`) em tempo real
+  * Ranking sempre reflete o estado atual do concurso
+* **Destaque visual dos números sorteados** ✅ **IMPLEMENTADO**
+  * Números acertados destacados em verde com checkmark
+  * Números sorteados (mas não acertados) destacados em amarelo
+  * Visualização clara de acertos por participação
+* **Classificação baseada na quantidade de acertos**
+  * Pontuação = quantidade de números acertados entre os números do ticket e os números sorteados
+  * Ranking ordenado por pontuação (maior para menor)
+  * Em caso de empate, ordena por data de criação (mais antiga primeiro)
+
+### Sistema de Premiação Automática ✅ **IMPLEMENTADO**
+
+**MODIFIQUEI AQUI** - O sistema agora calcula e exibe automaticamente os prêmios após cada sorteio:
+
+#### Categorias de Premiação
+
+O sistema divide os prêmios em três categorias configuráveis por concurso:
+
+1. **TOP** (Maior Pontuação)
+   * Premia os participantes com a **maior pontuação** do sorteio
+   * Percentual configurável (padrão: 65% do pool de premiação)
+   * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
+
+2. **SECOND** (Segunda Maior Pontuação)
+   * Premia os participantes com a **segunda maior pontuação** (se diferente da maior)
+   * Percentual configurável (padrão: 10% do pool de premiação)
+   * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
+
+3. **LOWEST** (Menor Pontuação Positiva)
+   * Premia os participantes com a **menor pontuação positiva** (>0) do sorteio
+   * Percentual configurável (padrão: 7% do pool de premiação)
+   * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
+   * **Importante:** LOWEST é a menor pontuação **positiva**, não zero
+
+#### Regras Importantes
+
+* **Não redistribuição:** Se uma categoria não tiver ganhadores (ex: ninguém acertou a pontuação necessária), o valor **NÃO é redistribuído** para outras categorias. O prêmio dessa categoria fica sem ganhadores.
+
+* **Condição "Não houve ganhadores":** A mensagem "Não houve ganhadores nesse sorteio" aparece **apenas quando maxScore == 0**, ou seja, quando nenhum participante acertou nenhum número.
+
+* **Taxa administrativa:** A porcentagem da administração (padrão: 18%) é calculada internamente mas **NÃO aparece no ranking público**. Apenas as três categorias de premiação (TOP, SECOND, LOWEST) são exibidas aos usuários.
+
+* **Pool de premiação:** O valor total de premiação é calculado como: `total_arrecadado - taxa_administrativa`
+
+#### Visualização no Ranking
+
+Após um sorteio finalizado, os usuários veem automaticamente:
+
+* **Seção "Resultado do Sorteio"** no topo da página de ranking
+  * Mostra as categorias premiadas (TOP, SECOND, LOWEST)
+  * Exibe quantidade de ganhadores e valor por ganhador em cada categoria
+  * Se não houver ganhadores (maxScore == 0), mostra mensagem explicativa
+  * Se uma categoria não tiver ganhadores, mostra "Sem ganhadores"
+
+* **Coluna "Prêmio" na tabela de ranking**
+  * Badge "🏆 Premiado" + valor em R$ para participantes que ganharam
+  * "—" para participantes não premiados
+  * Valor exibido corresponde ao prêmio do sorteio selecionado
+
+* **Seletor de sorteio** (quando há múltiplos sorteios)
+  * Permite visualizar resultados de sorteios específicos
+  * Prêmios são calculados e exibidos por sorteio individual
+
+#### Processamento Automático
+
+O sistema processa prêmios automaticamente quando:
+
+* Um sorteio é criado
+* Um sorteio é editado (números alterados)
+* Um sorteio é deletado (prêmios são removidos automaticamente)
+
+O processamento é **idempotente**: reprocessar o mesmo sorteio substitui os resultados anteriores, não duplica.
 
 ---
 
 ## 💰 Regras de Premiação (Configuráveis)
 
-Distribuição padrão (editável por concurso):
+**MODIFIQUEI AQUI** - As regras de premiação são totalmente configuráveis por concurso através do formulário de criação/edição (`AdminContestForm.tsx`).
 
-* **65%** — Maior pontuação (ex.: 10 acertos)
-* **10%** — Segunda maior pontuação (ex.: 9 acertos)
-* **7%** — Menor pontuação
-* **18%** — Taxa administrativa
+### Distribuição Padrão (Editável por Concurso)
+
+* **65%** — TOP (Maior pontuação, ex.: 10 acertos)
+* **10%** — SECOND (Segunda maior pontuação, ex.: 9 acertos)
+* **7%** — LOWEST (Menor pontuação positiva)
+* **18%** — Taxa administrativa (não exibida no ranking público)
+
+### Configuração
+
+Os percentuais podem ser configurados ao criar ou editar um concurso:
+
+* Validação automática: soma deve ser exatamente 100%
+* Valores não podem ser negativos
+* Indicador visual mostra o total em tempo real
+* Valores padrão são aplicados se não especificados
 
 ### Menor Pontuação
 
@@ -313,9 +429,9 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 | Fase | Status | Progresso | Próximos Passos |
 |------|--------|-----------|-----------------|
 | **FASE 1** - Fundação do Sistema | ✅ Completa | 100% | Pronta para produção |
-| **FASE 2** - Participações e Ranking | 🟡 Em Andamento | ~70% | Cálculos de ranking e acertos |
-| **FASE 3** - Pagamentos Pix | ⏳ Aguardando | 0% | Aguarda conclusão Fases 1 e 2 |
-| **FASE 4** - Sorteios e Rateio | 🟡 Em Andamento | ~60% | Gestão de sorteios implementada, falta cálculos automáticos |
+| **FASE 2** - Participações e Ranking | ✅ Completa | 100% | Ranking completo com prêmios automáticos implementado |
+| **FASE 3** - Pagamentos Pix | 🚧 Em Implementação | ~40% | Checkout implementado, falta webhook e ativação automática |
+| **FASE 4** - Sorteios e Rateio | ✅ Completa | 100% | Gestão de sorteios, rateio automático e prêmios por participação implementados |
 | **FASE 5** - Finalização | ⏳ Aguardando | 0% | Aguarda fases anteriores |
 
 ---
@@ -344,12 +460,17 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] CRUD completo de concursos
   - [x] Criar, listar, visualizar, editar e deletar concursos
   - [x] Filtros por status (Todos, Ativos, Rascunhos, Finalizados)
-- [x] Página de ativações (/admin/activations)
+- [x] Página de ativações (/admin/activations) ✅ **IMPLEMENTADO**
   - [x] Listagem de participações pendentes
   - [x] Busca por código/ticket único
   - [x] Registro de pagamento em dinheiro
   - [x] Ativação automática após registro de pagamento
   - [x] Modal de sucesso visual
+  - [x] **Atualização automática da lista após ativação** ✅ **IMPLEMENTADO**
+    - [x] Recarregamento automático após ativar participação
+    - [x] Remoção local da participação da lista após ativação
+    - [x] Delay para garantir propagação da atualização
+    - [x] Logs de debug para rastreamento
 - [x] Página de participantes (/admin/participants)
   - [x] Listagem completa de participantes (agrupados por usuário)
   - [x] Filtros por concurso e status
@@ -365,6 +486,15 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - [x] Gráficos e análises estatísticas (gráfico de barras de arrecadação)
   - [x] Seleção de concurso e sorteio específico
   - [x] Filtros de período para relatórios de arrecadação
+  - [x] **Design refatorado do PDF** ✅ **IMPLEMENTADO**
+    - [x] Resultados/números sorteados exibidos no TOPO do PDF (logo após cabeçalho)
+    - [x] Aviso fixo sobre pagamento visível no cabeçalho
+    - [x] Tabela reformulada: ID sequencial | Nome | Código/Ticket | Números (todos em uma linha única)
+    - [x] Destaque visual de números acertados quando houver sorteios (fundo verde, borda destacada)
+    - [x] Contador de acertos por participação ("Acertos: X")
+    - [x] Seção de prêmios/ganhadores para relatórios finais (com rateio calculado)
+    - [x] Banner "FIM DO BOLÃO" para relatórios finais
+    - [x] Layout moderno, limpo e profissional (tipografia melhorada, espaçamento adequado, hierarquia visual clara)
 - [x] Página financeiro (/admin/finance) ✅ **IMPLEMENTADO**
   - [x] Parametrização de valores de participação por concurso
   - [x] Configuração de valores por concurso (editar participation_value)
@@ -385,6 +515,11 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - [x] Geração de código único para sorteios (DRW-YYYYMMDD-XXXXXX)
   - [x] Estatísticas de sorteios (total, por concurso, último sorteio)
   - [x] Exclusão de sorteios
+  - [x] **Finalização automática de concursos** ✅ **IMPLEMENTADO**
+    - [x] Ao criar o primeiro sorteio, o concurso é automaticamente finalizado
+    - [x] Status atualizado de `active` para `finished`
+    - [x] Recarregamento automático da lista de concursos após criar sorteio
+    - [x] Logs de debug para rastreamento
 - [x] Navegação e layout consistente em todas as páginas
 - [x] Sistema de modais de erro com ícones ✅ **RECÉM IMPLEMENTADO**
   - [x] Substituição de todos os `alert()` por modais visuais
@@ -397,6 +532,32 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] Geração automática de código único
 - [x] Exibição de código/ticket em todas as interfaces relevantes
 
+#### **Páginas do Usuário**
+- [x] Página de listagem de concursos (/contests) ✅ **IMPLEMENTADO**
+  - [x] Lista de concursos ativos disponíveis para participação
+  - [x] Seção de histórico de concursos finalizados ✅ **IMPLEMENTADO**
+  - [x] Abas para alternar entre "Ativos" e "Histórico"
+  - [x] Exibição de status dinâmico com badges visuais
+  - [x] Verificação automática de sorteios para determinar status real
+- [x] Página de detalhes do concurso (/contests/:id) ✅ **IMPLEMENTADO**
+  - [x] Informações completas do concurso
+  - [x] Histórico de sorteios realizados
+  - [x] Status dinâmico baseado em sorteios e datas
+  - [x] Bloqueio automático de participação após sorteios
+- [x] Página de participação (/contests/:id/join) ✅ **IMPLEMENTADO**
+  - [x] Seleção de números para participação
+  - [x] Validação de status do concurso antes de permitir participação
+  - [x] Bloqueio automático se concurso já possui sorteios
+  - [x] Redirecionamento para checkout após seleção
+- [x] Página de configurações (/settings) ✅ **IMPLEMENTADO**
+  - [x] 👤 Meu Perfil (editar nome, telefone, e-mail)
+  - [x] Alterar senha (com validações)
+  - [x] 🔔 Preferências (notificações, canais de comunicação)
+  - [x] 🔐 Segurança (último acesso, encerrar sessões)
+  - [x] 🎨 Aparência (tema claro/escuro, nome da plataforma)
+  - [x] Link "Meu Perfil" no Header redireciona para configurações
+  - [x] Link "Configurações" no menu do perfil funcional
+
 #### **UX/UI e Experiência do Usuário**
 - [x] Sistema de modais de erro com ícones visuais ✅ **IMPLEMENTADO**
   - [x] Substituição completa de `alert()` por modais customizados
@@ -404,6 +565,7 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - [x] Animações suaves (fadeIn, scaleIn)
   - [x] Design consistente em todas as páginas administrativas
   - [x] Fechamento intuitivo (clique fora ou botão)
+- [x] Favicon e título do site atualizados para "DezAqui" ✅ **IMPLEMENTADO**
 
 #### **🔮 Melhorias Opcionais / Ajustes Futuros (FASE 1)**
 *Estas melhorias são opcionais e podem ser implementadas posteriormente para aprimorar a experiência do administrador:*
@@ -435,11 +597,31 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] Volante numérico dinâmico (00-99)
 - [x] Surpresinha automática (geração aleatória)
 - [x] Status da participação (pendente / ativa / cancelada)
-- [x] Página "Meus Tickets" (/my-tickets)
-- [x] Página de detalhes do concurso (/contests/:id)
-- [x] Página de participação (/contests/:id/join)
-- [x] Lista de concursos ativos (/contests) visível para usuários não autenticados
+- [x] Página "Meus Tickets" (/my-tickets) ✅ **IMPLEMENTADO**
+  - [x] Listagem de todas as participações do usuário
+  - [x] Status dinâmico baseado em sorteios e datas
+  - [x] Exibição de código/ticket único
+- [x] Página de detalhes do concurso (/contests/:id) ✅ **IMPLEMENTADO**
+  - [x] Informações completas do concurso
+  - [x] Histórico de sorteios
+  - [x] Status dinâmico com badges visuais
+  - [x] Bloqueio de participação após sorteios
+- [x] Página de participação (/contests/:id/join) ✅ **IMPLEMENTADO**
+  - [x] Seleção de números
+  - [x] Validação de status antes de permitir participação
+  - [x] Bloqueio automático se concurso já possui sorteios
+  - [x] Validação server-side adicional
+- [x] Lista de concursos ativos (/contests) ✅ **IMPLEMENTADO**
+  - [x] Visível para usuários não autenticados
+  - [x] Seção de histórico de concursos finalizados
+  - [x] Abas para alternar entre ativos e histórico
+  - [x] Status dinâmico baseado em sorteios
 - [x] Redirecionamento para login ao tentar participar sem autenticação
+- [x] **Validação de participação em concursos finalizados** ✅ **IMPLEMENTADO**
+  - [x] Bloqueio no frontend antes de selecionar números
+  - [x] Validação server-side no serviço de participações
+  - [x] Verificação de sorteios existentes
+  - [x] Mensagens de erro específicas e informativas
 
 #### **Visualizações**
 - [x] Histórico de sorteios (exibição na página de detalhes)
@@ -463,11 +645,23 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 **⚠️ PRÉ-REQUISITOS:** Fases 1 e 2 devem estar 100% completas antes de iniciar Fase 3
 
-#### **Integração Asaas Pix**
-- [ ] Configuração da API Asaas (credenciais, ambiente sandbox/produção)
-- [ ] Serviço de pagamentos (`paymentsService.ts`) para Pix
-- [ ] Geração de QR Code Pix dinâmico
-- [ ] Página de pagamento Pix (/contests/:id/payment)
+#### **Integração Asaas Pix** 🚧 **EM IMPLEMENTAÇÃO**
+- [x] Serviço de integração com API Asaas (`asaasService.ts`) ✅ **IMPLEMENTADO**
+  - [x] Função para criar pagamento Pix e gerar QR Code
+  - [x] Função para verificar status do pagamento
+- [x] Página de Checkout (`/contests/:id/checkout`) ✅ **IMPLEMENTADO**
+  - [x] Exibição de informações da participação (números, ticket code, data/hora, valor)
+  - [x] Seleção de método de pagamento (Pix ou Dinheiro)
+  - [x] Geração e exibição de QR Code Pix
+  - [x] Código Pix copia e cola
+  - [x] Fluxo de pagamento em dinheiro (registra e fica pendente)
+- [x] Modificação do fluxo de participação ✅ **IMPLEMENTADO**
+  - [x] `JoinContestPage` redireciona para checkout após seleção de números
+  - [x] Criação de participação no checkout antes do pagamento
+- [x] Serviço de pagamentos (`paymentsService.ts`) para Pix ✅ **IMPLEMENTADO**
+  - [x] Função `createPixPaymentRecord` para salvar pagamento Pix no banco
+  - [x] Função `createCashPayment` para pagamentos em dinheiro
+- [ ] Configuração da API Asaas (credenciais via variáveis de ambiente)
 - [ ] Webhook endpoint para confirmação de pagamento
 - [ ] Processamento de webhook e atualização de `payments.status`
 - [ ] Ativação automática da participação após confirmação Pix
@@ -494,6 +688,12 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] Agendamento por data e horário (campo datetime-local)
 - [x] Geração de código único para sorteios (DRW-YYYYMMDD-XXXXXX) ✅ **Implementado**
 - [x] Estatísticas de sorteios (total, por concurso, último sorteio)
+- [x] **Finalização automática de concursos** ✅ **IMPLEMENTADO**
+  - [x] Trigger SQL que finaliza concurso ao criar primeiro sorteio
+  - [x] Atualização automática de status no frontend
+  - [x] Verificação de primeiro sorteio antes de atualizar
+  - [x] Logs de debug para rastreamento
+  - [x] Migração SQL: `015_auto_finish_contest_on_draw.sql`
 
 #### **Cálculos e Rateio** (Pendências)
 - [ ] Recalculo automático de acertos após sorteios
@@ -504,6 +704,62 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - [ ] Adicionar campos na tabela `contests` para percentuais de rateio
   - [ ] Interface no `AdminContestForm.tsx` para configurar regras
   - [ ] Integração com `rateioCalculator.ts` para usar regras configuradas
+
+#### **Relatórios PDF** ✅ **REFATORADO**
+- [x] Design completamente refatorado do PDF ✅ **IMPLEMENTADO**
+  - [x] Resultados/números sorteados no TOPO (obrigatório, nunca no final)
+  - [x] Aviso fixo sobre pagamento no cabeçalho
+  - [x] Tabela com estrutura: ID | Nome | Código/Ticket | Números (uma linha única)
+  - [x] Numeração sequencial iniciando em 1
+  - [x] Destaque visual de acertos (números acertados com fundo verde e borda)
+  - [x] Contador de acertos por participação
+  - [x] **Bloco "Resumo Final do Bolão"** ✅ **IMPLEMENTADO**
+    - [x] Banner "FIM DO BOLÃO" centralizado (apenas relatórios finais)
+    - [x] Resumo por categoria com texto formatado: "X Pontos - Y ganhadores - Valor para cada premiado: R$XX.XXX,XX"
+    - [x] Texto especial para "Menos Pontos": "Menos Pontos - Y ganhadores - Valor para cada premiado que acertou X ponto: R$XX.XXX,XX"
+    - [x] Lista de ganhadores: Código/Ticket | Nome (em minúsculas)
+    - [x] Categorias ordenadas por pontuação (maior para menor)
+    - [x] Design limpo e profissional com hierarquia visual clara
+  - [x] Layout moderno, limpo e profissional
+  - [x] Tipografia melhorada (Segoe UI, hierarquia clara)
+  - [x] Espaçamento adequado e legibilidade otimizada
+
+---
+
+## 🔮 Melhorias Futuras
+
+### Sistema de Pagamento de Prêmios (Não Implementado)
+
+**Objetivo:** Permitir que usuários recebam prêmios via Pix automaticamente
+
+**Funcionalidades Planejadas:**
+
+* **Cadastro de Chave Pix pelo Usuário**
+  * Seção em `/settings` para cadastrar tipo de chave Pix (CPF, Email, Telefone, Chave Aleatória)
+  * Validação de formato de chave Pix
+  * Possibilidade de cadastrar múltiplas chaves (principal e secundária)
+  * Histórico de alterações de chave Pix
+
+* **Página Administrativa de Pagamentos**
+  * Lista de prêmios pendentes de pagamento por sorteio
+  * Visualização de chave Pix cadastrada pelo ganhador
+  * Botão para copiar chave Pix
+  * Marcar prêmio como pago (com confirmação)
+  * Histórico auditável de pagamentos realizados
+  * Filtros por concurso, sorteio, status de pagamento
+  * Exportação de relatório de pagamentos
+
+* **Notificações Automáticas**
+  * Notificação ao usuário quando ganhar prêmio
+  * Notificação quando prêmio for marcado como pago
+  * Lembrete para cadastrar chave Pix se ganhar sem ter cadastrado
+
+**Prioridade:** Baixa - Implementar após finalizar todas as fases principais
+
+**Onde Implementar:**
+* `SettingsPage.tsx`: Seção "Chave Pix" para cadastro
+* Nova página `AdminPayouts.tsx`: Gestão de pagamentos de prêmios
+* Tabela `draw_payouts`: Adicionar campos `pix_key`, `paid_at`, `paid_by` (futuro)
 
 ---
 
@@ -575,6 +831,16 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] Participações do usuário funcionando
 - [x] Página "Meus Tickets" implementada
 - [x] Lista pública de concursos ativos
+- [x] Seção de histórico de concursos finalizados
+- [x] **Validação de participação em concursos finalizados** ✅ **IMPLEMENTADO**
+  - [x] Bloqueio no frontend antes de selecionar números
+  - [x] Validação server-side no serviço de participações
+  - [x] Verificação de sorteios existentes
+  - [x] Mensagens de erro específicas e informativas
+- [x] **Finalização automática de concursos** ✅ **IMPLEMENTADO**
+  - [x] Trigger SQL para garantir consistência
+  - [x] Atualização automática no frontend
+  - [x] Validação de primeiro sorteio
 - [ ] **OBRIGATÓRIO:** Cálculo de acertos após sorteios
 - [ ] **OBRIGATÓRIO:** Atualização de pontuação (`current_score`)
 - [ ] **OBRIGATÓRIO:** Ranking em tempo real
@@ -587,26 +853,55 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 ## 🚀 Status do Projeto
 
-**📊 Progresso Geral: 48% de 100% finalizado**
+**📊 Progresso Geral: 78% de 100% finalizado**
 
 * 🟢 **Em desenvolvimento ativo**
-* ✅ **FASE 1:** 100% completa ✅ (incluindo melhorias de UX/UI)
-* 🟡 **FASE 2:** ~70% completa (faltam cálculos de ranking e acertos)
-* ⏳ **FASE 3:** Aguardando conclusão das Fases 1 e 2
-* 🟡 **FASE 4:** ~60% completa (gestão de sorteios implementada, falta cálculos automáticos)
+* ✅ **FASE 1:** 100% completa ✅ (incluindo melhorias de UX/UI e página de configurações)
+* ✅ **FASE 2:** 100% completa ✅ (ranking completo com prêmios automáticos por categoria)
+* 🚧 **FASE 3:** ~40% completa (checkout implementado, falta webhook e ativação automática)
+* ✅ **FASE 4:** 100% completa ✅ (gestão de sorteios, rateio automático, prêmios por participação, visualização no ranking)
 * 📦 Arquitetura definida e estável
 * ⚙️ Escalável e modular
 * 🔒 Segurança implementada (RLS completo)
 * 🎨 **UX/UI aprimorada** com modais visuais e ícones
+* ✅ **Finalização automática de concursos** implementada com trigger SQL
 
 **🎯 Foco Atual:**
-- Finalizar cálculos de ranking e acertos (FASE 2)
-- Implementar destaque visual dos números sorteados
-- Implementar recálculo automático de acertos após sorteios (FASE 4)
-- Testes completos do fluxo de participação
-- **Próximo passo:** Iniciar FASE 3 (integração Asaas Pix) após conclusão das pendências obrigatórias
+- Implementar webhook do Asaas para ativação automática de participações Pix (FASE 3)
+- Finalizar recálculo automático de acertos após sorteios (FASE 4)
+- Testes completos do fluxo de participação e pagamento
 
 **📝 Implementações Recentes:**
+- ✅ **Finalização automática de concursos** quando primeiro sorteio é criado
+  - ✅ Trigger SQL para garantir consistência no banco de dados
+  - ✅ Atualização automática de status no frontend
+  - ✅ Seção de histórico de concursos finalizados na página de concursos
+  - ✅ Validação de participação em concursos finalizados (frontend + backend)
+  - ✅ Bloqueio automático de participações após sorteios
+- ✅ **Seção de histórico de concursos** na página principal (`/contests`)
+  - ✅ Abas para alternar entre "Ativos" e "Histórico"
+  - ✅ Exibição de concursos finalizados com seus resultados
+  - ✅ Status dinâmico baseado em sorteios e datas
+- ✅ **Correções e melhorias na página AdminActivations**
+  - ✅ Atualização automática da lista após ativar participação
+  - ✅ Remoção local de participações ativadas
+  - ✅ Logs de debug para rastreamento
+- ✅ **Correções na página JoinContestPage**
+  - ✅ Correção de variável `draws` não declarada
+  - ✅ Validação completa de status antes de permitir participação
+- ✅ **Design refatorado completo do PDF de relatórios** (resultados no topo, tabela reformulada, destaque de acertos, seção de prêmios)
 - ✅ Sistema completo de modais de erro com ícones (substituição de todos os `alert()`)
 - ✅ Página completa de gestão de sorteios (`/admin/draws`)
 - ✅ Gestão completa de descontos e promoções (`/admin/finance`)
+- ✅ **Página de Checkout (`/contests/:id/checkout`)** com opções Pix e Dinheiro
+- ✅ **Integração com API Asaas** para geração de QR Code Pix
+- ✅ **Cálculo de pontuações baseado em acertos** de todos os sorteios nas páginas de ranking
+- ✅ **Exibição completa de números acertados** na página de rankings gerais
+- ✅ **Página de Configurações (`/settings`)** completa com:
+  - 👤 Meu Perfil (nome, telefone, e-mail, alterar senha)
+  - 🔔 Preferências (notificações, canais de comunicação)
+  - 🔐 Segurança (último acesso, encerrar sessões)
+  - 🎨 Aparência (tema claro/escuro, nome da plataforma)
+- ✅ **Validação de segurança** no registro de pagamentos em dinheiro (sempre usa valor do concurso)
+- ✅ **Favicon e título** do site atualizados para "DezAqui"
+- ✅ **Link "Meu Perfil"** no Header redireciona para página de configurações

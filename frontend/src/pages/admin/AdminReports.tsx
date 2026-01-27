@@ -155,8 +155,17 @@ export default function AdminReports() {
       const data = await getReportData(selectedContestId, selectedDrawId || undefined)
       setReportData(data)
       
-      // MODIFIQUEI AQUI - Calcular rateio se houver sorteios
+      // MODIFIQUEI AQUI - Calcular rateio se houver sorteios, usando regras do concurso
       if (data.draws.length > 0 && data.participations.some(p => p.current_score > 0)) {
+        // Buscar informações do concurso para usar percentuais configurados
+        const contest = contests.find(c => c.id === selectedContestId)
+        const rateioConfig = contest ? {
+          maiorPontuacao: contest.first_place_pct || 65,
+          segundaMaiorPontuacao: contest.second_place_pct || 10,
+          menorPontuacao: contest.lowest_place_pct || 7,
+          taxaAdministrativa: contest.admin_fee_pct || 18,
+        } : undefined
+
         const rateio = calculateRateio(
           data.participations.map(p => ({
             current_score: p.current_score,
@@ -165,7 +174,8 @@ export default function AdminReports() {
             ticket_code: p.ticket_code,
             user: p.user,
           })),
-          data.totalRevenue
+          data.totalRevenue,
+          rateioConfig
         )
         setRateioData(rateio)
       } else {
@@ -190,9 +200,36 @@ export default function AdminReports() {
     exportToExcel(reportData)
   }
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!reportData) return
-    exportToPDF(reportData)
+    
+    // MODIFIQUEI AQUI - Calcular rateio se necessário antes de exportar PDF, usando regras do concurso
+    let rateioToExport = rateioData
+    if (!rateioToExport && reportData.draws.length > 0 && reportData.participations.some(p => p.current_score > 0)) {
+      // Buscar informações do concurso para usar percentuais configurados
+      const contest = contests.find(c => c.id === selectedContestId)
+      const rateioConfig = contest ? {
+        maiorPontuacao: contest.first_place_pct || 65,
+        segundaMaiorPontuacao: contest.second_place_pct || 10,
+        menorPontuacao: contest.lowest_place_pct || 7,
+        taxaAdministrativa: contest.admin_fee_pct || 18,
+      } : undefined
+
+      rateioToExport = calculateRateio(
+        reportData.participations.map(p => ({
+          current_score: p.current_score,
+          user_id: p.user_id,
+          id: p.id,
+          ticket_code: p.ticket_code,
+          user: p.user,
+        })),
+        reportData.totalRevenue,
+        rateioConfig
+      )
+    }
+    
+    // MODIFIQUEI AQUI - Passar rateioData para o PDF quando disponível
+    exportToPDF(reportData, rateioToExport || undefined)
   }
 
   const formatDate = (dateString: string) => {
@@ -518,19 +555,39 @@ export default function AdminReports() {
             </div>
 
             {/* MODIFIQUEI AQUI - Visualização de Rateio */}
-            {rateioData && rateioData.ganhadores.length > 0 && (
+            {rateioData && (
               <div className="p-6 border-t border-[#E5E5E5]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-bold text-[#1F1F1F]">
                     Rateio de Prêmios
                   </h3>
-                  <button
-                    onClick={() => setShowRateio(!showRateio)}
-                    className="text-sm text-[#1E7F43] hover:text-[#3CCB7F] font-semibold"
-                  >
-                    {showRateio ? 'Ocultar' : 'Ver Detalhes'}
-                  </button>
+                  {rateioData.ganhadores.length > 0 && (
+                    <button
+                      onClick={() => setShowRateio(!showRateio)}
+                      className="text-sm text-[#1E7F43] hover:text-[#3CCB7F] font-semibold"
+                    >
+                      {showRateio ? 'Ocultar' : 'Ver Detalhes'}
+                    </button>
+                  )}
                 </div>
+                
+                {/* CHATGPT: alterei aqui - Mensagem explícita quando não houver ganhadores */}
+                {rateioData.ganhadores.length === 0 ? (
+                  <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <h4 className="text-lg font-bold text-yellow-900 mb-2">
+                      Nenhum Ganhador
+                    </h4>
+                    <p className="text-yellow-800 text-sm">
+                      Não há ganhadores neste concurso. Nenhum participante acertou números suficientes para receber prêmios.
+                    </p>
+                  </div>
+                ) : (
+                  <>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] rounded-xl p-4 text-white">
@@ -635,6 +692,8 @@ export default function AdminReports() {
                       </div>
                     </div>
                   </div>
+                )}
+                  </>
                 )}
               </div>
             )}

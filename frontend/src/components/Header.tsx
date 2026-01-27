@@ -120,22 +120,22 @@ export default function Header() {
   }, [navigate, closeProfileMenu, logout])
 
   /**
-   * Navega para a página de perfil (quando implementada)
+   * Navega para a página de configurações (Meu Perfil)
+   * MODIFIQUEI AQUI - Handler para clique em Meu Perfil redireciona para configurações
    */
   const handleProfileClick = useCallback(() => {
     closeProfileMenu()
-    // TODO: Implementar navegação para página de perfil
-    // navigate('/profile')
-  }, [closeProfileMenu])
+    navigate('/settings')
+  }, [closeProfileMenu, navigate])
 
   /**
-   * Navega para a página de configurações (quando implementada)
+   * Navega para a página de configurações
+   * MODIFIQUEI AQUI - Handler para clique em configurações
    */
   const handleSettingsClick = useCallback(() => {
     closeProfileMenu()
-    // TODO: Implementar navegação para página de configurações
-    // navigate('/settings')
-  }, [closeProfileMenu])
+    navigate('/settings')
+  }, [closeProfileMenu, navigate])
 
   /**
    * Fecha o menu ao clicar fora dele
@@ -385,8 +385,8 @@ export default function Header() {
                     </>
                   )}
                   
-                  <button
-                    type="button"
+                  <Link
+                    to="/settings"
                     onClick={handleProfileClick}
                     role="menuitem"
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1F1F1F] hover:bg-[#F9F9F9] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
@@ -395,7 +395,7 @@ export default function Header() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                     Meu Perfil
-                  </button>
+                  </Link>
                   
                   {/* MODIFIQUEI AQUI - Link para Meus Tickets */}
                   <Link

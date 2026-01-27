@@ -79,6 +79,56 @@ export default function AdminContestsList() {
     })
   }
 
+  // MODIFIQUEI AQUI - Função para mostrar modal de confirmação de deleção
+  const showConfirmDeleteModal = (contestName: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div')
+      modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.2s_ease-out]'
+      modal.innerHTML = `
+        <div class="bg-white rounded-2xl p-8 max-w-md mx-4 animate-[scaleIn_0.3s_ease-out] shadow-2xl">
+          <div class="text-center">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-500 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 class="text-xl font-bold text-[#1F1F1F] mb-2">Confirmar Exclusão</h3>
+            <p class="text-[#1F1F1F]/70 mb-6">
+              Tem certeza que deseja deletar o concurso <strong>"${contestName}"</strong>?<br />
+              <span class="text-red-600 font-semibold">Esta ação é irreversível!</span>
+            </p>
+            <div class="flex gap-3 justify-center">
+              <button class="cancel-btn px-6 py-2 bg-gray-100 text-[#1F1F1F] rounded-lg hover:bg-gray-200 transition-colors font-semibold">
+                Cancelar
+              </button>
+              <button class="confirm-btn px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold">
+                Deletar
+              </button>
+            </div>
+          </div>
+        </div>
+      `
+      document.body.appendChild(modal)
+      
+      const cancelBtn = modal.querySelector('.cancel-btn')
+      const confirmBtn = modal.querySelector('.confirm-btn')
+      
+      const closeModal = (result: boolean) => {
+        modal.remove()
+        resolve(result)
+      }
+      
+      cancelBtn?.addEventListener('click', () => closeModal(false))
+      confirmBtn?.addEventListener('click', () => closeModal(true))
+      
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          closeModal(false)
+        }
+      })
+    })
+  }
+
   const loadContests = async () => {
     try {
       const data = await listAllContests()
@@ -96,7 +146,9 @@ export default function AdminContestsList() {
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja deletar o concurso "${name}"?\n\nEsta ação é irreversível!`)) {
+    // MODIFIQUEI AQUI - Usar modal de confirmação ao invés de confirm()
+    const confirmed = await showConfirmDeleteModal(name)
+    if (!confirmed) {
       return
     }
 

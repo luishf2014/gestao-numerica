@@ -8,6 +8,7 @@ export default defineConfig({
     port: 3000,
     open: true
   },
+  base: '/', // MODIFIQUEI AQUI - Garantir que o base path está correto
   build: {
     outDir: 'dist',
     assetsDir: 'assets',

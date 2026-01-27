@@ -35,8 +35,8 @@ export async function createCashPayment(params: {
       paid_at: new Date().toISOString(),
       external_data: params.notes ? { notes: params.notes } : null,
     })
-    .select()
-    .single()
+    .select('*')
+    .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() ao invés de single() para evitar erro 406
 
   if (error) {
     if (error.code === '42501') {
@@ -173,7 +173,7 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
             .from('contests')
             .select('id, name')
             .eq('id', participationData.contest_id)
-            .single()
+            .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() para evitar erro 406
           contest = contestData || null
         } catch (err) {
           console.warn(`Erro ao buscar concurso ${participationData.contest_id}:`, err)

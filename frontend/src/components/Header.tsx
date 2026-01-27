@@ -17,27 +17,58 @@ const MENU_ANIMATION_DURATION = 200
 
 export default function Header() {
   const navigate = useNavigate()
-  const { user, isAdmin, logout } = useAuth()
+  const { user, isAdmin, logout, profile } = useAuth() // MODIFIQUEI AQUI - Adicionar profile ao destructuring
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [isFadingOut, setIsFadingOut] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
 
-  /**
-   * Obtém o nome de exibição do usuário a partir do email
-   */
-  const getUserDisplayName = useCallback(() => {
-    if (!user?.email) return 'Usuário'
-    return user.email.split('@')[0]
-  }, [user])
+  // MODIFIQUEI AQUI - Formatar telefone para exibição
+  const formatPhone = useCallback((phone: string | undefined | null): string => {
+    if (!phone) return ''
+    const clean = phone.replace(/\D/g, '')
+    if (clean.length === 11) {
+      return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`
+    } else if (clean.length === 10) {
+      return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`
+    }
+    return phone
+  }, [])
 
   /**
-   * Obtém a inicial do usuário para o avatar
+   * MODIFIQUEI AQUI - Obtém o nome de exibição do usuário (prioriza telefone do profile)
+   */
+  const getUserDisplayName = useCallback(() => {
+    // Se tiver telefone no profile, usar telefone formatado
+    if (profile?.phone) {
+      return formatPhone(profile.phone)
+    }
+    // Se não tiver telefone, usar nome do profile
+    if (profile?.name) {
+      return profile.name
+    }
+    // Fallback para email (caso ainda exista)
+    if (user?.email && !user.email.includes('@dezaqui.local')) {
+      return user.email.split('@')[0]
+    }
+    return 'Usuário'
+  }, [user, profile, formatPhone])
+
+  /**
+   * MODIFIQUEI AQUI - Obtém a inicial do usuário para o avatar (prioriza nome)
    */
   const getUserInitial = useCallback(() => {
-    if (!user?.email) return 'U'
-    return user.email.charAt(0).toUpperCase()
-  }, [user])
+    if (profile?.name) {
+      return profile.name.charAt(0).toUpperCase()
+    }
+    if (profile?.phone) {
+      return profile.phone.charAt(0).toUpperCase()
+    }
+    if (user?.email && !user.email.includes('@dezaqui.local')) {
+      return user.email.charAt(0).toUpperCase()
+    }
+    return 'U'
+  }, [user, profile])
 
   /**
    * Fecha o menu de perfil
@@ -191,13 +222,15 @@ export default function Header() {
               Concursos
             </Link>
             
-            {/* MODIFIQUEI AQUI - Link "Rankings" visível para todos */}
-            <Link
-              to="/rankings"
-              className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
-            >
-              Rankings
-            </Link>
+            {/* MODIFIQUEI AQUI - Link "Rankings" visível apenas quando autenticado */}
+            {user && (
+              <Link
+                to="/rankings"
+                className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+              >
+                Rankings
+              </Link>
+            )}
             
             {/* MODIFIQUEI AQUI - Link "Meus Tickets" visível apenas quando autenticado */}
             {user && (
@@ -294,17 +327,24 @@ export default function Header() {
                       {getUserInitial()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-[#1F1F1F] truncate" aria-label="Email do usuário">
-                        {user.email || 'Usuário'}
+                      <p className="text-sm font-bold text-[#1F1F1F] truncate" aria-label="Informações do usuário">
+                        {profile?.name || getUserDisplayName() || 'Usuário'}
                       </p>
-                      <p className="text-xs text-[#1F1F1F]/60 font-medium">Perfil do usuário</p>
+                      {profile?.phone && (
+                        <p className="text-xs text-[#1F1F1F]/60 font-medium">
+                          {formatPhone(profile.phone)}
+                        </p>
+                      )}
+                      {!profile?.phone && (
+                        <p className="text-xs text-[#1F1F1F]/60 font-medium">Perfil do usuário</p>
+                      )}
                     </div>
                   </div>
                 </div>
                 
                 {/* Itens do menu */}
                 <div className="p-2" role="group">
-                  {/* CHATGPT: alterei aqui - Links admin atualizados no dropdown do perfil */}
+                  {/* Links admin atualizados no dropdown do perfil */}
                   {isAdmin && (
                     <>
                       <Link
@@ -367,6 +407,19 @@ export default function Header() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                     </svg>
                     Meus Tickets
+                  </Link>
+                  
+                  {/* MODIFIQUEI AQUI - Link para Rankings */}
+                  <Link
+                    to="/rankings"
+                    onClick={closeProfileMenu}
+                    role="menuitem"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1F1F1F] hover:bg-[#F9F9F9] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1F1F1F]/60 group-hover:text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                    </svg>
+                    Rankings
                   </Link>
                   
                   <button

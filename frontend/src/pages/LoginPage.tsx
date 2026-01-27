@@ -20,6 +20,7 @@ export default function LoginPage() {
   // MODIFIQUEI AQUI - Verificar se deve abrir em modo cadastro através da query string
   const searchParams = new URLSearchParams(location.search)
   const [isSignUp, setIsSignUp] = useState(searchParams.get('signup') === 'true')
+  const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -27,6 +28,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // MODIFIQUEI AQUI - Função para converter telefone em e-mail interno (Supabase requer e-mail)
+  const phoneToEmail = (phoneNumber: string): string => {
+    // Remove caracteres não numéricos
+    const cleanPhone = phoneNumber.replace(/\D/g, '')
+    return `${cleanPhone}@dezaqui.local`
+  }
+
+  // MODIFIQUEI AQUI - Função para validar formato de telefone brasileiro
+  const validatePhone = (phoneNumber: string): boolean => {
+    // Remove caracteres não numéricos
+    const cleanPhone = phoneNumber.replace(/\D/g, '')
+    // Aceita telefone com DDD (10 ou 11 dígitos)
+    return cleanPhone.length >= 10 && cleanPhone.length <= 11
+  }
+
 
   // MODIFIQUEI AQUI - Sincronizar modo sign up com query string
   useEffect(() => {
@@ -66,14 +83,29 @@ export default function LoginPage() {
     setSuccess(null)
     setLoading(true)
 
+    // MODIFIQUEI AQUI - Validar telefone antes de fazer login
+    if (!validatePhone(phone)) {
+      setError('Por favor, informe um telefone válido (com DDD)')
+      setLoading(false)
+      return
+    }
+
     try {
+      // MODIFIQUEI AQUI - Converter telefone para e-mail interno para autenticação no Supabase
+      const internalEmail = phoneToEmail(phone)
+      
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: internalEmail,
         password,
       })
 
       if (signInError) {
-        setError(signInError.message || 'Erro ao fazer login')
+        // MODIFIQUEI AQUI - Mensagens de erro mais amigáveis
+        if (signInError.message.includes('Invalid login credentials')) {
+          setError('Telefone ou senha incorretos')
+        } else {
+          setError(signInError.message || 'Erro ao fazer login')
+        }
         setLoading(false)
         return
       }
@@ -96,34 +128,65 @@ export default function LoginPage() {
     setSuccess(null)
     setLoading(true)
 
+    // MODIFIQUEI AQUI - Validar telefone antes de criar conta
+    if (!validatePhone(phone)) {
+      setError('Por favor, informe um telefone válido (com DDD)')
+      setLoading(false)
+      return
+    }
+
+    if (!name.trim()) {
+      setError('Por favor, informe seu nome completo')
+      setLoading(false)
+      return
+    }
+
     try {
+      // MODIFIQUEI AQUI - Usar e-mail fornecido ou gerar e-mail interno do telefone
+      // Se não fornecer e-mail, gera um e-mail interno baseado no telefone para autenticação
+      const signUpEmail = email.trim() || phoneToEmail(phone)
+      
+      // MODIFIQUEI AQUI - Criar conta sem confirmação de e-mail
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: signUpEmail,
         password,
         options: {
           data: {
             full_name: name,
+            phone: phone, // Armazenar telefone real no metadata
+            email: email.trim() || undefined, // MODIFIQUEI AQUI - Armazenar e-mail real se fornecido (para uso futuro)
           },
+          // MODIFIQUEI AQUI - Desabilitar confirmação de e-mail
+          emailRedirectTo: undefined,
         },
       })
 
       if (signUpError) {
-        setError(signUpError.message || 'Erro ao criar conta')
+        // MODIFIQUEI AQUI - Mensagens de erro mais amigáveis
+        if (signUpError.message.includes('already registered')) {
+          setError('Este telefone já está cadastrado. Faça login ou use outro telefone.')
+        } else {
+          setError(signUpError.message || 'Erro ao criar conta')
+        }
+        setLoading(false)
         return
       }
 
       if (data.user) {
-        // MODIFIQUEI AQUI - Garantir que o perfil tenha o nome salvo corretamente
-        // O trigger pode criar o perfil antes do metadata ser salvo, então atualizamos/inserimos aqui
+        // MODIFIQUEI AQUI - Garantir que o perfil tenha o nome e telefone salvos corretamente
         try {
-          // Tentar inserir ou atualizar o perfil com o nome
+          // Limpar telefone para formato padrão (apenas números)
+          const cleanPhone = phone.replace(/\D/g, '')
+          
+          // MODIFIQUEI AQUI - Tentar inserir ou atualizar o perfil com o nome, telefone e e-mail
+          // O e-mail será salvo mesmo que não seja usado para login agora (para uso futuro)
           const { error: profileError } = await supabase
             .from('profiles')
             .upsert({
               id: data.user.id,
-              email: data.user.email || email,
-              name: name || '',
-              phone: null,
+              email: email.trim() || signUpEmail, // MODIFIQUEI AQUI - Salvar e-mail fornecido ou e-mail interno
+              name: name.trim(),
+              phone: cleanPhone, // MODIFIQUEI AQUI - Salvar telefone real (usado para login)
               is_admin: false,
             }, {
               onConflict: 'id'
@@ -133,7 +196,7 @@ export default function LoginPage() {
           if (profileError) {
             console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileError)
           } else {
-            console.log('[LoginPage] Perfil criado/atualizado com sucesso, nome salvo:', name)
+            console.log('[LoginPage] Perfil criado/atualizado com sucesso:', { name, phone: cleanPhone })
           }
         } catch (profileErr) {
           console.warn('[LoginPage] Erro ao criar/atualizar perfil:', profileErr)
@@ -144,9 +207,12 @@ export default function LoginPage() {
         setIsSignUp(false)
         setPassword('')
         setShowPassword(false)
+        setPhone('') // MODIFIQUEI AQUI - Limpar telefone após cadastro
+        setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao criar conta')
+      setLoading(false)
     } finally {
       setLoading(false)
     }
@@ -211,21 +277,66 @@ export default function LoginPage() {
                   </div>
                 )}
                 <div>
-                  <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                    Email
+                  <label htmlFor="phone" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                    Telefone
                   </label>
                   <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    autoComplete="tel"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={phone}
+                    onChange={(e) => {
+                      // MODIFIQUEI AQUI - Formatar telefone enquanto digita
+                      const value = e.target.value.replace(/\D/g, '')
+                      let formatted = value
+                      
+                      if (value.length > 11) {
+                        formatted = value.slice(0, 11)
+                      }
+                      
+                      // Formatar: (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
+                      if (formatted.length > 10) {
+                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2, 7)}-${formatted.slice(7)}`
+                      } else if (formatted.length > 6) {
+                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2, 6)}-${formatted.slice(6)}`
+                      } else if (formatted.length > 2) {
+                        formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2)}`
+                      } else if (formatted.length > 0) {
+                        formatted = `(${formatted}`
+                      }
+                      
+                      setPhone(formatted)
+                    }}
                     className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
-                    placeholder="Email"
+                    placeholder="(00) 00000-0000"
+                    maxLength={15}
                   />
+                  <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                    Informe seu telefone com DDD (ex: (11) 98765-4321)
+                  </p>
                 </div>
+                {isSignUp && (
+                  <div>
+                    <label htmlFor="email" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                      E-mail
+                    </label>
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                      placeholder="seu@email.com"
+                    />
+                    {/* <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                      E-mail será salvo para uso futuro (login por e-mail poderá ser implementado depois)
+                    </p> */}
+                  </div>
+                )}
                 <div>
                   <label htmlFor="password" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                     Senha
@@ -316,6 +427,11 @@ export default function LoginPage() {
                   setError(null)
                   setSuccess(null)
                   setShowPassword(false)
+                  setPhone('') // MODIFIQUEI AQUI - Limpar telefone ao alternar entre login e cadastro
+                  if (isSignUp) {
+                    setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
+                    setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
+                  }
                   navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
                 }}
                 className="text-sm font-semibold text-[#1E7F43] transition hover:text-[#3CCB7F]"

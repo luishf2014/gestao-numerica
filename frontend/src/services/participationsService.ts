@@ -26,6 +26,17 @@ export async function createParticipation(params: {
     throw new Error('Usuário não autenticado')
   }
 
+  // MODIFIQUEI AQUI - Validar dados antes de enviar
+  if (!params.contestId || !params.numbers || params.numbers.length === 0) {
+    throw new Error('Dados inválidos para criar participação')
+  }
+
+  // MODIFIQUEI AQUI - Garantir que os números são válidos (inteiros positivos)
+  const validNumbers = params.numbers.filter(n => Number.isInteger(n) && n > 0)
+  if (validNumbers.length !== params.numbers.length) {
+    throw new Error('Números inválidos. Por favor, selecione apenas números válidos.')
+  }
+
   // MODIFIQUEI AQUI - Gerar código/ticket único para a participação
   let ticketCode = generateTicketCode()
   let attempts = 0
@@ -33,37 +44,62 @@ export async function createParticipation(params: {
 
   // Tentar criar participação com código único (pode haver conflito se código já existir)
   while (attempts < maxAttempts) {
-    const { data, error } = await supabase
-      .from('participations')
-      .insert({
-        contest_id: params.contestId,
-        user_id: user.id, // CHATGPT: sempre usa auth.uid(), não aceita do frontend
-        numbers: params.numbers,
-        status: 'pending', // Status padrão
-        ticket_code: ticketCode, // MODIFIQUEI AQUI - Adicionar código/ticket único
-      })
-      .select()
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('participations')
+        .insert({
+          contest_id: params.contestId,
+          user_id: user.id, // CHATGPT: sempre usa auth.uid(), não aceita do frontend
+          numbers: validNumbers, // MODIFIQUEI AQUI - Usar números validados
+          status: 'pending', // Status padrão
+          ticket_code: ticketCode, // MODIFIQUEI AQUI - Adicionar código/ticket único
+        })
+        .select('*')
+        .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() ao invés de single() para evitar erro 406
 
-    if (error) {
-      // Se erro de código duplicado, tentar gerar novo código
-      if (error.code === '23505' && error.message?.includes('ticket_code')) {
+      if (error) {
+        // Se erro de código duplicado, tentar gerar novo código
+        if (error.code === '23505' && error.message?.includes('ticket_code')) {
+          attempts++
+          ticketCode = generateTicketCode()
+          continue
+        }
+        
+        // Tratar erros de RLS com mensagem amigável
+        if (error.code === '42501') {
+          throw new Error('Você não tem permissão para criar esta participação')
+        }
+        if (error.code === '23505') {
+          throw new Error('Você já possui uma participação neste concurso')
+        }
+        // MODIFIQUEI AQUI - Melhor tratamento de erro 400
+        if (error.code === 'PGRST116' || error.message?.includes('400')) {
+          throw new Error(`Dados inválidos: ${error.message}`)
+        }
+        throw new Error(`Erro ao criar participação: ${error.message}`)
+      }
+
+      if (!data) {
+        // Se não retornou dados mas também não teve erro, tentar novamente
         attempts++
         ticketCode = generateTicketCode()
         continue
       }
-      
-      // Tratar erros de RLS com mensagem amigável
-      if (error.code === '42501') {
-        throw new Error('Você não tem permissão para criar esta participação')
-      }
-      if (error.code === '23505') {
-        throw new Error('Você já possui uma participação neste concurso')
-      }
-      throw new Error(`Erro ao criar participação: ${error.message}`)
-    }
 
-    return data
+      return data
+    } catch (err) {
+      // Se não for erro de código duplicado, propagar o erro
+      if (err instanceof Error && !err.message.includes('ticket_code')) {
+        throw err
+      }
+      // Se for erro de código duplicado, continuar tentando
+      if (attempts < maxAttempts - 1) {
+        attempts++
+        ticketCode = generateTicketCode()
+        continue
+      }
+      throw err
+    }
   }
 
   throw new Error('Não foi possível gerar um código único para a participação. Tente novamente.')
@@ -206,6 +242,22 @@ export async function listPendingParticipations(): Promise<Array<Participation &
  * @returns Participação atualizada
  */
 export async function activateParticipation(participationId: string): Promise<Participation> {
+  // MODIFIQUEI AQUI - Primeiro verificar se a participação existe
+  const { data: existingData, error: fetchError } = await supabase
+    .from('participations')
+    .select('id')
+    .eq('id', participationId)
+    .maybeSingle()
+
+  if (fetchError) {
+    throw new Error(`Erro ao verificar participação: ${fetchError.message}`)
+  }
+
+  if (!existingData) {
+    throw new Error('Participação não encontrada')
+  }
+
+  // MODIFIQUEI AQUI - Atualizar usando maybeSingle() para evitar erro 406
   const { data, error } = await supabase
     .from('participations')
     .update({
@@ -213,14 +265,18 @@ export async function activateParticipation(participationId: string): Promise<Pa
       updated_at: new Date().toISOString(),
     })
     .eq('id', participationId)
-    .select()
-    .single()
+    .select('*')
+    .maybeSingle()
 
   if (error) {
     if (error.code === '42501') {
       throw new Error('Você não tem permissão para ativar esta participação')
     }
     throw new Error(`Erro ao ativar participação: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error('Participação não encontrada após atualização')
   }
 
   return data

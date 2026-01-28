@@ -12,7 +12,7 @@ import { Contest, Draw } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
-import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
+import { getContestState } from '../utils/contestHelpers'
 
 export default function ContestDetailsPage() {
   const { id } = useParams<{ id: string }>()
@@ -57,6 +57,30 @@ export default function ContestDetailsPage() {
 
     loadContestData()
   }, [id])
+
+  // MODIFIQUEI AQUI - Atualizar estado do botão quando a data de início chegar
+  useEffect(() => {
+    if (!contest) return
+
+    const contestState = getContestState(contest, draws.length > 0)
+    
+    // Se o concurso está "em breve", verificar quando a data de início chegar
+    if (contestState.phase === 'upcoming') {
+      const startDate = new Date(contest.start_date)
+      const now = new Date()
+      const timeUntilStart = startDate.getTime() - now.getTime()
+
+      if (timeUntilStart > 0) {
+        // Criar um timer para atualizar quando a data de início chegar
+        const timer = setTimeout(() => {
+          // Forçar re-render atualizando o estado (mesmo que seja o mesmo valor)
+          setContest({ ...contest })
+        }, timeUntilStart + 1000) // +1 segundo para garantir que passou
+
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [contest, draws.length])
 
   if (loading) {
     return (
@@ -144,11 +168,20 @@ export default function ContestDetailsPage() {
                 <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-white mb-3">
                   {contest.name}
                 </h1>
+                {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                {contest.contest_code && (
+                  <div className="mb-2">
+                    <span className="px-3 py-1 bg-white/20 text-white rounded-full text-xs sm:text-sm font-mono font-semibold">
+                      Código do Concurso: {contest.contest_code}
+                    </span>
+                  </div>
+                )}
                 {contest.description && (
                   <p className="text-white/90 text-sm sm:text-base md:text-lg max-w-2xl">{contest.description}</p>
                 )}
               </div>
-              {canAcceptParticipations(contest, draws.length > 0) && (
+              {/* MODIFIQUEI AQUI - Usar getContestState para verificar se aceita participações e mostrar botão correto */}
+              {getContestState(contest, draws.length > 0).acceptsParticipations ? (
                 <button
                   onClick={() => {
                     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado, senão para página de participação
@@ -162,8 +195,7 @@ export default function ContestDetailsPage() {
                 >
                   Participar Agora
                 </button>
-              )}
-              {!canAcceptParticipations(contest, draws.length > 0) && (
+              ) : (
                 <div className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-[#E5E5E5] text-[#1F1F1F]/60 rounded-xl font-bold text-base md:text-lg text-center cursor-not-allowed">
                   {getContestState(contest, draws.length > 0).label}
                 </div>

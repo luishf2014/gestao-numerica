@@ -134,7 +134,7 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error('É necessário informar a data do sorteio')
   }
 
-  // CHATGPT: alterei aqui - Verificar se é o primeiro sorteio ANTES de inserir
+  // MODIFIQUEI AQUI - Verificar se é o primeiro sorteio ANTES de inserir
   const existingDraws = await listDrawsByContestId(input.contest_id)
   const isFirstDraw = existingDraws.length === 0
 
@@ -193,14 +193,14 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     throw new Error(`Erro ao criar sorteio: ${error.message}`)
   }
 
-  // CHATGPT: alterei aqui - Se este é o primeiro sorteio, atualizar status do concurso para 'finished'
+  // MODIFIQUEI AQUI - Se este é o primeiro sorteio, atualizar status do concurso para 'finished'
   if (isFirstDraw && data) {
     try {
       console.log(`[drawsService] Primeiro sorteio detectado para concurso ${input.contest_id}. Atualizando status...`)
       const updatedContest = await updateContest(input.contest_id, { status: 'finished' })
       console.log(`[drawsService] Status do concurso ${input.contest_id} atualizado para 'finished' após primeiro sorteio. Status atual:`, updatedContest.status)
       
-      // CHATGPT: alterei aqui - Aguardar um pouco para garantir propagação
+      // MODIFIQUEI AQUI - Aguardar um pouco para garantir propagação
       await new Promise(resolve => setTimeout(resolve, 300))
     } catch (statusUpdateError) {
       // Log do erro mas não falhar a criação do sorteio
@@ -216,7 +216,7 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     }
   }
 
-  // CHATGPT: alterei aqui - Reprocessar concurso após criar sorteio (recalcular acertos, pontuações e rateio)
+  // MODIFIQUEI AQUI - Reprocessar concurso após criar sorteio (recalcular acertos, pontuações e rateio)
   if (data) {
     try {
       console.log(`[drawsService] Iniciando reprocessamento do concurso ${input.contest_id} após criar sorteio...`)

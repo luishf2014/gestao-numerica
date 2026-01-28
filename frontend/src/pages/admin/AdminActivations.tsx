@@ -56,7 +56,7 @@ export default function AdminActivations() {
       
       console.log('[AdminActivations] Participações pendentes encontradas:', participationsData.length)
       
-      // CHATGPT: alterei aqui - Carregar pagamentos para cada participação
+      // MODIFIQUEI AQUI - Carregar pagamentos para cada participação
       const participationsWithPayments = await Promise.all(
         participationsData.map(async (participation) => {
           try {
@@ -90,9 +90,9 @@ export default function AdminActivations() {
   // MODIFIQUEI AQUI - Abrir modal para registrar pagamento em dinheiro
   const handleRegisterPayment = (participation: ParticipationWithDetails) => {
     setSelectedParticipation(participation)
-    // MODIFIQUEI AQUI - Sempre usar o valor do concurso (apenas para exibição)
+    // MODIFIQUEI AQUI - Inicializar com valor do concurso (admin pode editar para aplicar desconto)
     const contestValue = participation.contest?.participation_value || 0
-    setPaymentAmount(contestValue.toString())
+    setPaymentAmount(contestValue > 0 ? contestValue.toFixed(2).replace('.', ',') : '')
     setPaymentNotes('')
     setShowPaymentModal(true)
   }
@@ -166,7 +166,7 @@ export default function AdminActivations() {
   const handleSubmitPayment = async () => {
     if (!selectedParticipation) return
 
-    // MODIFIQUEI AQUI - Sempre usar o valor do concurso para evitar fraudes
+    // MODIFIQUEI AQUI - Validar valor informado pelo admin (permite aplicar desconto)
     const contestValue = selectedParticipation.contest?.participation_value
     if (!contestValue || contestValue <= 0) {
       showErrorModal(
@@ -177,40 +177,64 @@ export default function AdminActivations() {
       return
     }
 
+    // MODIFIQUEI AQUI - Usar valor informado pelo admin (permite desconto) ou valor do concurso como padrão
+    const amountToUse = paymentAmount.trim() 
+      ? parseFloat(paymentAmount.replace(',', '.'))
+      : contestValue
+
+    if (isNaN(amountToUse) || amountToUse <= 0) {
+      showErrorModal(
+        'Valor inválido',
+        'Por favor, informe um valor válido maior que zero.',
+        'money'
+      )
+      return
+    }
+
+    // MODIFIQUEI AQUI - Validar que o valor não seja maior que o valor do concurso (evitar fraudes)
+    if (amountToUse > contestValue) {
+      showErrorModal(
+        'Valor inválido',
+        `O valor informado (R$ ${amountToUse.toFixed(2)}) não pode ser maior que o valor do concurso (R$ ${contestValue.toFixed(2)}).`,
+        'money'
+      )
+      return
+    }
+
     setRegisteringPayment(true)
     try {
-      // MODIFIQUEI AQUI - Registrar pagamento sempre com o valor do concurso
+      // MODIFIQUEI AQUI - Registrar pagamento com o valor informado pelo admin (pode ter desconto aplicado)
       await createCashPayment({
         participationId: selectedParticipation.id,
-        amount: contestValue, // Sempre usar o valor do concurso
+        amount: amountToUse, // MODIFIQUEI AQUI - Usar valor informado pelo admin (permite desconto)
         notes: paymentNotes.trim() || undefined,
       })
       
-      // CHATGPT: alterei aqui - Ativar participação automaticamente após registrar pagamento
+      // MODIFIQUEI AQUI - Ativar participação automaticamente após registrar pagamento
       console.log('[AdminActivations] Ativando participação após registrar pagamento:', selectedParticipation.id)
       const updatedParticipation = await activateParticipation(selectedParticipation.id)
       console.log('[AdminActivations] Participação ativada. Status:', updatedParticipation.status)
       
-      // CHATGPT: alterei aqui - Preparar dados para modal de sucesso
+      // MODIFIQUEI AQUI - Preparar dados para modal de sucesso
       setSuccessData({
         userName: selectedParticipation.user?.name || 'Usuário',
-        amount: contestValue, // Sempre usar o valor do concurso
+        amount: amountToUse, // MODIFIQUEI AQUI - Usar valor informado pelo admin
         ticketCode: selectedParticipation.ticket_code,
       })
       
-      // CHATGPT: alterei aqui - Fechar modal de pagamento primeiro
+      // MODIFIQUEI AQUI - Fechar modal de pagamento primeiro
       setShowPaymentModal(false)
       setSelectedParticipation(null)
       setPaymentAmount('')
       setPaymentNotes('')
       
-      // CHATGPT: alterei aqui - Aguardar um pouco para garantir que a atualização seja propagada
+      // MODIFIQUEI AQUI - Aguardar um pouco para garantir que a atualização seja propagada
       await new Promise(resolve => setTimeout(resolve, 500))
       
-      // CHATGPT: alterei aqui - Recarregar dados e remover a participação da lista localmente
+      // MODIFIQUEI AQUI - Recarregar dados e remover a participação da lista localmente
       await loadData()
       
-      // CHATGPT: alterei aqui - Verificar se a participação foi removida da lista
+      // MODIFIQUEI AQUI - Verificar se a participação foi removida da lista
       const stillInList = participations.find(p => p.id === selectedParticipation.id)
       if (stillInList) {
         console.warn('[AdminActivations] ATENÇÃO: Participação ainda aparece na lista após ativação. Forçando remoção local.')
@@ -232,7 +256,7 @@ export default function AdminActivations() {
     }
   }
 
-  // CHATGPT: alterei aqui - Ativar participação (apenas quando já tem pagamento registrado)
+  // MODIFIQUEI AQUI - Ativar participação (apenas quando já tem pagamento registrado)
   const handleActivate = async (participationId: string, userName: string) => {
     if (!confirm(`Tem certeza que deseja ativar a participação de "${userName}"?\n\nEsta ação marcará a participação como ativa.`)) {
       return
@@ -244,13 +268,13 @@ export default function AdminActivations() {
       const updatedParticipation = await activateParticipation(participationId)
       console.log('[AdminActivations] Participação ativada. Status:', updatedParticipation.status)
       
-      // CHATGPT: alterei aqui - Aguardar um pouco para garantir que a atualização seja propagada
+      // MODIFIQUEI AQUI - Aguardar um pouco para garantir que a atualização seja propagada
       await new Promise(resolve => setTimeout(resolve, 500))
       
-      // CHATGPT: alterei aqui - Recarregar dados e remover a participação da lista localmente também
+      // MODIFIQUEI AQUI - Recarregar dados e remover a participação da lista localmente também
       await loadData()
       
-      // CHATGPT: alterei aqui - Verificar se a participação foi removida da lista (deve ter sido, pois status mudou para 'active')
+      // MODIFIQUEI AQUI - Verificar se a participação foi removida da lista (deve ter sido, pois status mudou para 'active')
       const stillInList = participations.find(p => p.id === participationId)
       if (stillInList) {
         console.warn('[AdminActivations] ATENÇÃO: Participação ainda aparece na lista após ativação. Forçando remoção local.')
@@ -600,25 +624,55 @@ export default function AdminActivations() {
 
               <div>
                 <label htmlFor="payment-amount" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                  Valor do Concurso (R$) <span className="text-red-500">*</span>
+                  Valor a Receber (R$) <span className="text-red-500">*</span>
+                  {selectedParticipation.contest?.participation_value && (
+                    <span className="text-xs text-[#1F1F1F]/60 ml-2 font-normal">
+                      (Valor do concurso: R$ {selectedParticipation.contest.participation_value.toFixed(2).replace('.', ',')})
+                    </span>
+                  )}
                 </label>
                 <input
                   id="payment-amount"
                   type="text"
-                  readOnly
-                  value={selectedParticipation.contest?.participation_value 
-                    ? `R$ ${selectedParticipation.contest.participation_value.toFixed(2).replace('.', ',')}`
-                    : 'Não configurado'}
-                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F] font-semibold cursor-not-allowed"
+                  value={paymentAmount}
+                  onChange={(e) => {
+                    // MODIFIQUEI AQUI - Permitir apenas números, vírgula e ponto
+                    const value = e.target.value.replace(/[^\d,.-]/g, '').replace(',', '.')
+                    if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                      setPaymentAmount(e.target.value)
+                    }
+                  }}
+                  placeholder="0,00"
+                  className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all"
+                  disabled={registeringPayment}
                 />
-                <p className="mt-2 text-xs text-[#1F1F1F]/70 bg-blue-50 border border-blue-200 rounded-lg p-2">
-                  <strong>🔒 Segurança:</strong> O valor é sempre obtido do concurso para evitar alterações indevidas.
-                  {!selectedParticipation.contest?.participation_value && (
-                    <span className="block mt-1 text-red-600 font-semibold">
-                      ⚠️ Configure o valor do concurso antes de registrar o pagamento.
-                    </span>
-                  )}
-                </p>
+                {/* MODIFIQUEI AQUI - Mostrar informação sobre desconto */}
+                {selectedParticipation.contest?.participation_value && paymentAmount && (
+                  (() => {
+                    const enteredValue = parseFloat(paymentAmount.replace(',', '.')) || 0
+                    const contestValue = selectedParticipation.contest.participation_value
+                    const discount = contestValue - enteredValue
+                    if (discount > 0 && enteredValue > 0) {
+                      return (
+                        <p className="text-xs text-green-600 mt-1">
+                          ✓ Desconto aplicado: R$ {discount.toFixed(2).replace('.', ',')} ({((discount / contestValue) * 100).toFixed(1)}%)
+                        </p>
+                      )
+                    } else if (discount < 0) {
+                      return (
+                        <p className="text-xs text-red-600 mt-1">
+                          ⚠ Valor maior que o do concurso. Verifique o valor informado.
+                        </p>
+                      )
+                    }
+                    return null
+                  })()
+                )}
+                {!selectedParticipation.contest?.participation_value && (
+                  <p className="mt-2 text-xs text-red-600 font-semibold">
+                    ⚠️ Configure o valor do concurso antes de registrar o pagamento.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -650,7 +704,7 @@ export default function AdminActivations() {
                 </button>
                 <button
                   onClick={handleSubmitPayment}
-                  disabled={registeringPayment || !paymentAmount || parseFloat(paymentAmount) <= 0}
+                  disabled={registeringPayment || !paymentAmount || parseFloat(paymentAmount.replace(',', '.')) <= 0}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {registeringPayment ? (

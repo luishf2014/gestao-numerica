@@ -802,7 +802,15 @@ export default function AdminFinance() {
                     {contests.map((contest) => (
                       <tr key={contest.id} className="border-b border-[#E5E5E5] hover:bg-[#F9F9F9]">
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-[#1F1F1F]">{contest.name}</div>
+                          <div className="flex flex-col gap-1">
+                            <div className="font-semibold text-[#1F1F1F]">{contest.name}</div>
+                            {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                            {contest.contest_code && (
+                              <span className="text-xs text-[#1F1F1F]/60 font-mono">
+                                Código: {contest.contest_code}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${

@@ -216,14 +216,19 @@ export async function reprocessDrawResults(drawId: string): Promise<void> {
     }
 
     // 2. Buscar informações do concurso
+    // MODIFIQUEI AQUI - Incluir numbers_per_participation para cálculo correto de categorias
     const { data: contest, error: contestError } = await supabase
       .from('contests')
-      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value')
+      .select('id, first_place_pct, second_place_pct, lowest_place_pct, admin_fee_pct, participation_value, numbers_per_participation')
       .eq('id', draw.contest_id)
       .single()
 
     if (contestError || !contest) {
       throw new Error(`Erro ao buscar concurso: ${contestError?.message || 'Concurso não encontrado'}`)
+    }
+
+    if (!contest.numbers_per_participation) {
+      throw new Error(`Concurso não possui numbers_per_participation configurado`)
     }
 
     // 3. Buscar todas as participações ativas do concurso
@@ -274,10 +279,12 @@ export async function reprocessDrawResults(drawId: string): Promise<void> {
       taxaAdministrativa: contest.admin_fee_pct || 18,
     }
 
+    // MODIFIQUEI AQUI - Passar numbers_per_participation para cálculo correto
     const payoutResult = calculateDrawPayouts(
       participationsWithScore,
       totalArrecadado,
-      rateioConfig
+      rateioConfig,
+      contest.numbers_per_participation
     )
 
     // 7. MODIFIQUEI AQUI - Deletar payouts existentes deste draw (idempotência)

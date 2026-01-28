@@ -252,7 +252,7 @@ export default function AdminParticipants() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ex: João Silva, joao@email.com ou TKT-20250124-A1B2C3"
+                placeholder="Ex: João Silva, joao@email.com ou TK-A1B2C3"
                 className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
               />
             </div>
@@ -341,9 +341,17 @@ export default function AdminParticipants() {
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h4 className="font-semibold text-[#1F1F1F]">
-                                {participation.contest?.name || 'Concurso não encontrado'}
-                              </h4>
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-[#1F1F1F]">
+                                  {participation.contest?.name || 'Concurso não encontrado'}
+                                </h4>
+                                {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                                {participation.contest?.contest_code && (
+                                  <p className="text-xs text-[#1F1F1F]/60 mt-1 font-mono">
+                                    Código do Concurso: {participation.contest.contest_code}
+                                  </p>
+                                )}
+                              </div>
                               {getStatusBadge(participation.status)}
                             </div>
                             {participation.ticket_code && (

@@ -45,7 +45,7 @@ function App() {
           {/* MODIFIQUEI AQUI - Rota de Configurações */}
           <Route path="/settings" element={<SettingsPage />} />
           
-          {/* CHATGPT: alterei aqui - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
+          {/* MODIFIQUEI AQUI - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
           <Route path="/admin" element={<RequireAdmin />}>
             <Route index element={<AdminDashboard />} />
             <Route path="contests" element={<AdminContestsList />} />

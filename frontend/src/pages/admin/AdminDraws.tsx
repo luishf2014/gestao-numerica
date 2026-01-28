@@ -320,10 +320,10 @@ export default function AdminDraws() {
         const createdDraw = await createDraw(createInput)
         console.log('[AdminDraws] Sorteio criado:', createdDraw.id)
         
-        // CHATGPT: alterei aqui - Aguardar um pouco para garantir que o trigger SQL e a atualização do status sejam propagados
+        // MODIFIQUEI AQUI - Aguardar um pouco para garantir que o trigger SQL e a atualização do status sejam propagados
         await new Promise(resolve => setTimeout(resolve, 800))
         
-        // CHATGPT: alterei aqui - Recarregar concursos após criar sorteio para atualizar status
+        // MODIFIQUEI AQUI - Recarregar concursos após criar sorteio para atualizar status
         // Forçar recarregamento completo dos dados
         setLoading(true)
         try {
@@ -513,7 +513,7 @@ export default function AdminDraws() {
                     <option value="all">Todos os Concursos</option>
                     {contests.map((contest) => (
                       <option key={contest.id} value={contest.id}>
-                        {contest.name}
+                        {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}
                       </option>
                     ))}
                   </select>
@@ -591,9 +591,17 @@ export default function AdminDraws() {
                               )}
                             </td>
                             <td className="py-3 px-4">
-                              <span className="text-sm font-semibold text-[#1F1F1F]">
-                                {contest?.name || 'N/A'}
-                              </span>
+                              <div className="flex flex-col gap-1">
+                                <span className="text-sm font-semibold text-[#1F1F1F]">
+                                  {contest?.name || 'N/A'}
+                                </span>
+                                {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                                {contest?.contest_code && (
+                                  <span className="text-xs text-[#1F1F1F]/60 font-mono">
+                                    Código: {contest.contest_code}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-4">
                               <span className="text-sm text-[#1F1F1F]">
@@ -684,7 +692,7 @@ export default function AdminDraws() {
                           <option value="">Selecione um concurso</option>
                           {contests.map((contest) => (
                             <option key={contest.id} value={contest.id}>
-                              {contest.name} ({contest.numbers_per_participation} números)
+                              {contest.name} ({contest.numbers_per_participation} números){contest.contest_code ? ` - ${contest.contest_code}` : ''}
                             </option>
                           ))}
                         </select>

@@ -11,8 +11,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { listActiveContests, listFinishedContests, getContestById } from '../services/contestsService'
 import { getContestRanking, listMyParticipations } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
+import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
 import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
+import { getPayoutCategory, groupParticipationsByCategory, getCategoryLabel } from '../utils/payoutCategoryHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import Header from '../components/Header'
@@ -35,11 +37,13 @@ export default function RankingsPage() {
   const [selectedContest, setSelectedContest] = useState<Contest | null>(null)
   const [ranking, setRanking] = useState<ParticipationWithUser[]>([])
   const [draws, setDraws] = useState<Draw[]>([])
+  const [payouts, setPayouts] = useState<Record<string, any>>({}) // participationId -> DrawPayout
+  const [payoutSummary, setPayoutSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [loadingRanking, setLoadingRanking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // CHATGPT: alterei aqui - Carregar concursos ativos e finalizados baseado no tipo de usuário
+  // MODIFIQUEI AQUI - Carregar concursos ativos e finalizados baseado no tipo de usuário
   useEffect(() => {
     async function loadAvailableContests() {
       if (authLoading) return
@@ -61,7 +65,7 @@ export default function RankingsPage() {
           const myParticipations = await listMyParticipations()
           // Extrair IDs únicos de concursos
           const contestIds = [...new Set(myParticipations.map(p => p.contest_id).filter(Boolean))]
-          
+
           // Buscar detalhes dos concursos
           const allContests = await Promise.all(
             contestIds.map(async (contestId) => {
@@ -73,12 +77,12 @@ export default function RankingsPage() {
               }
             })
           )
-          
+
           const validContests = allContests.filter((c): c is Contest => c !== null)
           // Separar em ativos e finalizados
           const active = validContests.filter(c => c.status === 'active')
           const finished = validContests.filter(c => c.status === 'finished')
-          
+
           setActiveContests(active)
           setFinishedContests(finished)
         } else {
@@ -97,17 +101,19 @@ export default function RankingsPage() {
     loadAvailableContests()
   }, [user, isAdmin, authLoading, navigate])
 
-  // CHATGPT: alterei aqui - Atualizar lista de concursos disponíveis baseado na aba selecionada
+  // MODIFIQUEI AQUI - Atualizar lista de concursos disponíveis baseado na aba selecionada
   useEffect(() => {
     const currentContests = activeTab === 'active' ? activeContests : finishedContests
     setAvailableContests(currentContests)
-    
+
     // Limpar seleção se o concurso selecionado não estiver na lista atual
     if (selectedContestId && !currentContests.find(c => c.id === selectedContestId)) {
       setSelectedContestId('')
       setSelectedContest(null)
       setRanking([])
       setDraws([])
+      setPayouts({})
+      setPayoutSummary(null)
     }
   }, [activeTab, activeContests, finishedContests, selectedContestId])
 
@@ -117,6 +123,8 @@ export default function RankingsPage() {
       if (!selectedContestId) {
         setRanking([])
         setDraws([])
+        setPayouts({})
+        setPayoutSummary(null)
         setSelectedContest(null)
         return
       }
@@ -134,7 +142,7 @@ export default function RankingsPage() {
 
         setSelectedContest(contest)
 
-        // Buscar ranking e sorteios do concurso selecionado
+        // Buscar ranking, sorteios e payouts do concurso selecionado
         const [rankingData, drawsData] = await Promise.all([
           getContestRanking(selectedContestId),
           listDrawsByContestId(selectedContestId),
@@ -142,6 +150,33 @@ export default function RankingsPage() {
 
         setRanking(rankingData)
         setDraws(drawsData)
+
+        // MODIFIQUEI AQUI - Buscar payouts do último sorteio se houver
+        if (drawsData.length > 0) {
+          const lastDraw = drawsData[0] // Já ordenado por data desc
+          try {
+            const [summary, drawPayouts] = await Promise.all([
+              getDrawPayoutSummary(lastDraw.id),
+              getPayoutsByDraw(lastDraw.id),
+            ])
+
+            setPayoutSummary(summary)
+
+            // Criar mapa de participação -> payout
+            const payoutsMap: Record<string, any> = {}
+            drawPayouts.forEach((p) => {
+              payoutsMap[p.participation_id] = p
+            })
+            setPayouts(payoutsMap)
+          } catch (err) {
+            console.error('[RankingsPage] Erro ao carregar payouts:', err)
+            setPayouts({})
+            setPayoutSummary(null)
+          }
+        } else {
+          setPayouts({})
+          setPayoutSummary(null)
+        }
       } catch (err) {
         console.error('[RankingsPage] Erro ao carregar ranking:', err)
         setError(err instanceof Error ? err.message : 'Erro ao carregar ranking')
@@ -254,7 +289,7 @@ export default function RankingsPage() {
                 🏆 Rankings
               </h1>
               <p className="text-[#1F1F1F]/90 text-sm sm:text-base md:text-lg max-w-2xl">
-                {isAdmin 
+                {isAdmin
                   ? 'Visualize os rankings de todos os concursos ativos e veja quem está na liderança'
                   : 'Visualize o ranking dos concursos em que você está participando'}
               </p>
@@ -263,7 +298,7 @@ export default function RankingsPage() {
         </div>
       </div>
 
-      {/* CHATGPT: alterei aqui - Abas para alternar entre Ativos e Histórico */}
+      {/* MODIFIQUEI AQUI - Abas para alternar entre Ativos e Histórico */}
       <div className="container mx-auto px-2 sm:px-4 mb-6 max-w-7xl">
         <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
           <button
@@ -297,7 +332,7 @@ export default function RankingsPage() {
           </div>
         )}
 
-        {/* CHATGPT: alterei aqui - Seletor de Concurso */}
+        {/* MODIFIQUEI AQUI - Seletor de Concurso */}
         <div className="mb-6 sm:mb-8">
           <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-lg">
             <label htmlFor="contest-select" className="block text-sm sm:text-base font-semibold text-[#1F1F1F] mb-3">
@@ -319,7 +354,7 @@ export default function RankingsPage() {
             {availableContests.length === 0 && (
               <p className="mt-3 text-sm text-[#1F1F1F]/60">
                 {activeTab === 'active'
-                  ? (isAdmin 
+                  ? (isAdmin
                       ? 'Nenhum concurso ativo no momento.'
                       : 'Você ainda não está participando de nenhum concurso ativo.')
                   : (isAdmin
@@ -356,8 +391,8 @@ export default function RankingsPage() {
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3 flex-wrap">
-                    <ContestStatusBadge 
-                      contest={selectedContest} 
+                    <ContestStatusBadge
+                      contest={selectedContest}
                       hasDraws={draws.length > 0}
                       variant="card"
                     />
@@ -373,13 +408,23 @@ export default function RankingsPage() {
                   <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">
                     {selectedContest.name}
                   </h3>
+                  {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                  {selectedContest.contest_code && (
+                    <div className="mb-2">
+                      <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-full text-xs font-mono font-semibold">
+                        Código do Concurso: {selectedContest.contest_code}
+                      </span>
+                    </div>
+                  )}
                   {selectedContest.description && (
                     <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2 mb-2">
                       {selectedContest.description}
                     </p>
                   )}
                   <p className="text-[#1F1F1F]/50 text-xs sm:text-sm">
-                    Encerra em {formatDate(selectedContest.end_date)}
+                    {selectedContest.status === 'finished'
+                      ? `Finalizado em ${formatDate(selectedContest.end_date)}`
+                      : `Encerra em ${formatDate(selectedContest.end_date)}`}
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -398,20 +443,30 @@ export default function RankingsPage() {
                 </div>
               </div>
 
+              {/* MODIFIQUEI AQUI - Mensagem correta quando ainda não houve sorteio */}
+              {ranking.length > 0 && draws.length === 0 && (
+                <div className="rounded-xl sm:rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-4">
+                  <div className="text-center">
+                    <div className="text-3xl mb-2">⏳</div>
+                    <h4 className="text-base sm:text-lg font-bold text-blue-900 mb-2">
+                      Aguardando sorteio
+                    </h4>
+                    <p className="text-blue-800 text-xs sm:text-sm">
+                      Ainda não há sorteios realizados. A classificação abaixo mostra os participantes (pontuação 0 até o primeiro sorteio).
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Top 3 Podium */}
-              {ranking.length > 0 && (() => {
-                // MODIFIQUEI AQUI - Ordenar por pontuação calculada antes de pegar top 3
-                const sortedRanking = [...ranking].sort((a, b) => {
-                  const scoreA = getTotalScore(a, draws)
-                  const scoreB = getTotalScore(b, draws)
-                  if (scoreB !== scoreA) return scoreB - scoreA
-                  return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                })
-                const topThree = sortedRanking.slice(0, 3)
-                const hasWinners = topThree.length > 0 && topThree.some(p => getTotalScore(p, draws) > 0)
-                
-                // CHATGPT: alterei aqui - Mensagem explícita quando não houver ganhadores
-                if (!hasWinners) {
+              {ranking.length > 0 && draws.length > 0 && (() => {
+                // MODIFIQUEI AQUI - Agrupar participantes por categoria de premiação
+                const grouped = groupParticipationsByCategory(payouts)
+                const isFinished = selectedContest.status === 'finished'
+
+                // MODIFIQUEI AQUI - Se não há participantes premiados, mostrar mensagem neutra
+                const hasPremiados = grouped.TOP.length > 0 || grouped.SECOND.length > 0 || grouped.LOWEST.length > 0
+                if (!hasPremiados) {
                   return (
                     <div className="rounded-xl sm:rounded-2xl border-2 border-yellow-200 bg-yellow-50 p-4 sm:p-6 mb-4">
                       <div className="text-center">
@@ -421,17 +476,24 @@ export default function RankingsPage() {
                           </svg>
                         </div>
                         <h4 className="text-base sm:text-lg font-bold text-yellow-900 mb-2">
-                          Nenhum Ganhador Ainda
+                          Ainda não há pontuação suficiente para exibir o Top 3.
                         </h4>
                         <p className="text-yellow-800 text-xs sm:text-sm">
-                          Ainda não há participantes com pontuação suficiente para aparecer no pódio. Aguarde os sorteios!
+                          {isFinished
+                            ? 'O ranking abaixo mostra a classificação final dos participantes.'
+                            : 'O ranking abaixo mostra a classificação dos participantes.'}
                         </p>
                       </div>
                     </div>
                   )
                 }
-                
-                return topThree.length > 0 && (
+
+                // MODIFIQUEI AQUI - Buscar participações premiadas para exibir no pódio
+                const topParticipations = grouped.TOP.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
+                const secondParticipations = grouped.SECOND.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
+                const lowestParticipations = grouped.LOWEST.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
+
+                return (
                   <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-gradient-to-br from-[#F9F9F9] to-white p-4 sm:p-6 mb-4">
                     <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                       <div className="p-1.5 sm:p-2 bg-[#F4C430]/10 rounded-lg">
@@ -444,45 +506,66 @@ export default function RankingsPage() {
                       </h4>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                      {/* 2º Lugar */}
-                      {topThree[1] && (
+                      {/* SECOND */}
+                      {secondParticipations.length > 0 && (
                         <div className="order-2 sm:order-1 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-gray-50 to-white p-3 sm:p-4 text-center">
                           <div className="text-2xl sm:text-3xl mb-2">🥈</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">2º Lugar</div>
-                          <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-2 truncate">
-                            {topThree[1].user?.name || 'Anônimo'}
-                          </div>
-                          <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                            {getTotalScore(topThree[1], draws)} pts
-                          </div>
+                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('SECOND')}</div>
+                          {secondParticipations.map((participation, idx) => {
+                            const payout = payouts[participation.id]
+                            return (
+                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
+                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {participation.user?.name || 'Anônimo'}
+                                </div>
+                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
+                                  {payout?.score || getTotalScore(participation, draws)} pts
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
 
-                      {/* 1º Lugar */}
-                      {topThree[0] && (
+                      {/* TOP */}
+                      {topParticipations.length > 0 && (
                         <div className="order-1 sm:order-2 rounded-lg sm:rounded-xl border-2 border-[#F4C430] bg-gradient-to-br from-[#F4C430]/20 to-[#FFD700]/20 p-3 sm:p-4 text-center transform sm:-translate-y-2">
                           <div className="text-3xl sm:text-4xl mb-2">🥇</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">1º Lugar</div>
-                          <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-2 truncate">
-                            {topThree[0].user?.name || 'Anônimo'}
-                          </div>
-                          <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">
-                            {getTotalScore(topThree[0], draws)} pts
-                          </div>
+                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('TOP')}</div>
+                          {topParticipations.map((participation, idx) => {
+                            const payout = payouts[participation.id]
+                            return (
+                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
+                                <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {participation.user?.name || 'Anônimo'}
+                                </div>
+                                <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">
+                                  {payout?.score || getTotalScore(participation, draws)} pts
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
 
-                      {/* 3º Lugar */}
-                      {topThree[2] && (
+                      {/* LOWEST */}
+                      {lowestParticipations.length > 0 && (
                         <div className="order-3 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-orange-50 to-white p-3 sm:p-4 text-center">
                           <div className="text-2xl sm:text-3xl mb-2">🥉</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">3º Lugar</div>
-                          <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-2 truncate">
-                            {topThree[2].user?.name || 'Anônimo'}
-                          </div>
-                          <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                            {getTotalScore(topThree[2], draws)} pts
-                          </div>
+                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('LOWEST')}</div>
+                          {lowestParticipations.map((participation, idx) => {
+                            const payout = payouts[participation.id]
+                            return (
+                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
+                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                  {participation.user?.name || 'Anônimo'}
+                                </div>
+                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
+                                  {payout?.score || getTotalScore(participation, draws)} pts
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -505,7 +588,7 @@ export default function RankingsPage() {
                   </div>
                   <div className="space-y-2">
                     {(() => {
-                      // MODIFIQUEI AQUI - Ordenar por pontuação calculada antes de exibir
+                      // MODIFIQUEI AQUI - Ordenar por pontuação e usar categorias de premiação
                       const sortedRanking = [...ranking].sort((a, b) => {
                         const scoreA = getTotalScore(a, draws)
                         const scoreB = getTotalScore(b, draws)
@@ -516,23 +599,23 @@ export default function RankingsPage() {
                         const position = index + 1
                         const hitNumbers = getHitNumbersForParticipation(participation, draws)
                         const totalScore = getTotalScore(participation, draws)
-                        const isTopThree = position <= 3
+                        const payout = payouts[participation.id]
+                        const { medal } = getPayoutCategory(payout)
+                        const hasMedal = medal !== undefined
 
                         return (
                           <div
                             key={participation.id}
                             className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                              isTopThree
+                              hasMedal
                                 ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
                                 : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
                             }`}
                           >
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                               <div className="flex-shrink-0">
-                                {isTopThree ? (
-                                  <span className="text-xl sm:text-2xl">
-                                    {position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉'}
-                                  </span>
+                                {medal ? (
+                                  <span className="text-xl sm:text-2xl">{medal}</span>
                                 ) : (
                                   <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">
                                     #{position}

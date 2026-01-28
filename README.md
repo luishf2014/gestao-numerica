@@ -209,8 +209,14 @@ gestao-numerica/
 
 ## 🏆 Ranking e Premiação Automática
 
-### Sistema de Ranking
+### 🏆 Ranking (Classificação)
 
+**MODIFIQUEI AQUI** - O ranking é uma **classificação** que mostra todos os participantes ordenados por pontuação:
+
+* **Ranking nunca fica vazio** ✅ **IMPLEMENTADO**
+  * Sempre exibe todos os participantes, ordenados por pontuação
+  * Participantes com 0 pontos aparecem normalmente no ranking
+  * Ranking mostra classificação, não premiação
 * **Atualização automática após cada sorteio** ✅ **IMPLEMENTADO**
   * Recalcula acertos de todas as participações automaticamente
   * Atualiza pontuações (`current_score`) em tempo real
@@ -224,39 +230,66 @@ gestao-numerica/
   * Ranking ordenado por pontuação (maior para menor)
   * Em caso de empate, ordena por data de criação (mais antiga primeiro)
 
+**Importante:** Ranking ≠ Premiação. O ranking mostra a classificação dos participantes, enquanto a premiação mostra os valores financeiros ganhos.
+
 ### Sistema de Premiação Automática ✅ **IMPLEMENTADO**
 
 **MODIFIQUEI AQUI** - O sistema agora calcula e exibe automaticamente os prêmios após cada sorteio:
 
 #### Categorias de Premiação
 
-O sistema divide os prêmios em três categorias configuráveis por concurso:
+**MODIFIQUEI AQUI** - O sistema divide os prêmios em três categorias configuráveis por concurso:
 
-1. **TOP** (Maior Pontuação)
-   * Premia os participantes com a **maior pontuação** do sorteio
+1. **TOP** (Pontuação Máxima)
+   * Premia **somente** participantes com pontuação igual a `numbers_per_participation` (ex: 10/10 acertos)
    * Percentual configurável (padrão: 65% do pool de premiação)
    * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
+   * Se ninguém acertar todos os números, a categoria fica "Sem ganhadores" e o valor NÃO é redistribuído
 
-2. **SECOND** (Segunda Maior Pontuação)
-   * Premia os participantes com a **segunda maior pontuação** (se diferente da maior)
+2. **SECOND** (Segunda Pontuação)
+   * Premia **somente** participantes com pontuação igual a `numbers_per_participation - 1` (ex: 9/10 acertos)
    * Percentual configurável (padrão: 10% do pool de premiação)
    * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
+   * Se ninguém acertar essa pontuação exata, a categoria fica "Sem ganhadores" e o valor NÃO é redistribuído
 
 3. **LOWEST** (Menor Pontuação Positiva)
    * Premia os participantes com a **menor pontuação positiva** (>0) do sorteio
    * Percentual configurável (padrão: 7% do pool de premiação)
    * Em caso de empate, divide o prêmio igualmente entre todos os ganhadores
    * **Importante:** LOWEST é a menor pontuação **positiva**, não zero
+   * LOWEST só premia se a pontuação for menor que SECOND (ex: se SECOND = 9, LOWEST premia apenas pontuações < 9)
 
 #### Regras Importantes
 
+**MODIFIQUEI AQUI** - Regras de premiação imutáveis:
+
+* **Regras de Porcentagem (Imutáveis):**
+  * **TOP → 65%** do valor total arrecadado (participantes com `numbers_per_participation` acertos)
+  * **SECOND → 10%** do valor total arrecadado (participantes com `numbers_per_participation - 1` acertos)
+  * **LOWEST → 7%** do valor total arrecadado (participantes com menor pontuação positiva > 0)
+  * **ADMIN → 18%** (nunca aparece no ranking público)
+
+* **Empates:** O valor da categoria é dividido igualmente entre todos os participantes com a mesma pontuação.
+
 * **Não redistribuição:** Se uma categoria não tiver ganhadores (ex: ninguém acertou a pontuação necessária), o valor **NÃO é redistribuído** para outras categorias. O prêmio dessa categoria fica sem ganhadores.
 
-* **Condição "Não houve ganhadores":** A mensagem "Não houve ganhadores nesse sorteio" aparece **apenas quando maxScore == 0**, ou seja, quando nenhum participante acertou nenhum número.
+* **Condição "Não houve ganhadores":** A mensagem "Não houve ganhadores neste sorteio" aparece **apenas quando maxScore == 0**, ou seja, quando nenhum participante acertou nenhum número. Quando houver sorteio mas ninguém for premiado, exibe-se "Não houve ganhadores neste sorteio" no topo e "Nenhum participante foi premiado neste sorteio" na seção de classificação.
 
-* **Taxa administrativa:** A porcentagem da administração (padrão: 18%) é calculada internamente mas **NÃO aparece no ranking público**. Apenas as três categorias de premiação (TOP, SECOND, LOWEST) são exibidas aos usuários.
+* **Taxa administrativa:** A porcentagem da administração (padrão: 18%) é calculada internamente mas **NUNCA aparece no ranking público**. Apenas as três categorias de premiação (TOP, SECOND, LOWEST) são exibidas aos usuários.
 
 * **Pool de premiação:** O valor total de premiação é calculado como: `total_arrecadado - taxa_administrativa`
+
+* **Separação Ranking e Premiação:**
+  * **Ranking (Classificação)** SEMPRE lista todos os participantes, mesmo com 0 pontos
+  * **Premiação** mostra os valores financeiros ganhos por categoria
+  * Nunca ocultar participantes por não haver ganhadores
+  * **"Houve ganhadores premiados"** é determinado EXCLUSIVAMENTE por payouts (`amount_won > 0`), não por pontuação
+  * A verificação de ganhadores deve sempre usar `payoutSummary` ou `payouts` do sorteio selecionado
+  * **Consistência com sorteio selecionado:**
+    * Quando há sorteio selecionado (`selectedDrawId`), a tabela ordena e exibe pontuação baseada apenas nesse sorteio
+    * Quando não há sorteio selecionado, usa pontuação total (todos os sorteios)
+    * Destaque de números acertados considera apenas o sorteio selecionado (quando houver)
+    * Card "Maior Pontuação" calcula corretamente usando a mesma regra da tabela (max score do sorteio selecionado ou total)
 
 #### Visualização no Ranking
 
@@ -269,9 +302,13 @@ Após um sorteio finalizado, os usuários veem automaticamente:
   * Se uma categoria não tiver ganhadores, mostra "Sem ganhadores"
 
 * **Coluna "Prêmio" na tabela de ranking**
-  * Badge "🏆 Premiado" + valor em R$ para participantes que ganharam
-  * "—" para participantes não premiados
-  * Valor exibido corresponde ao prêmio do sorteio selecionado
+  * **MODIFIQUEI AQUI** - Estados da coluna Prêmio:
+    * Se não existe draw: exibe "⏳ Aguardando sorteio"
+    * Se existe draw e `payout.amount_won === 0`: exibe "❌ Não premiado"
+    * Se `payout.amount_won > 0`: exibe "🏆 Premiado" + valor em R$
+  * Valor exibido corresponde ao prêmio do sorteio selecionado (por `participation_id` e `draw_id`)
+  * **"Premiado" é definido EXCLUSIVAMENTE por payout (`amount_won > 0`)** do sorteio do concurso, não por pontuação
+  * Ranking SEMPRE lista todos os participantes, mesmo com 0 pontos ou sem prêmio
 
 * **Seletor de sorteio** (quando há múltiplos sorteios)
   * Permite visualizar resultados de sorteios específicos
@@ -287,18 +324,48 @@ O sistema processa prêmios automaticamente quando:
 
 O processamento é **idempotente**: reprocessar o mesmo sorteio substitui os resultados anteriores, não duplica.
 
+#### Exibição de Prêmios em "Meus Tickets"
+
+**MODIFIQUEI AQUI** - A página "Meus Tickets" exibe o resultado financeiro **por ticket individualmente** (por `participation_id`):
+
+* **Cada concurso tem 1 sorteio** (para o usuário)
+* **Cada ticket é avaliado individualmente** no sorteio do seu concurso
+* **Exibição por ticket:**
+  * Busca o draw (sorteio) do concurso do ticket
+  * Busca o payout específico: `getPayoutByParticipationAndDraw(participationId, drawId)`
+  * Se `payout.amount_won > 0` → Exibe "🏆 Premiado: R$ XX,XX"
+  * Se `payout.amount_won === 0` ou não existe → Exibe "❌ Não premiado neste sorteio"
+* **Importante:**
+  * Não agrega payouts de múltiplos tickets
+  * Não soma payouts de múltiplos sorteios
+  * Cada ticket mostra seu próprio resultado financeiro do sorteio do seu concurso
+  * Se o concurso ainda não tem sorteio, não exibe bloco de premiação (ou exibe "Aguardando sorteio")
+
 ---
 
 ## 💰 Regras de Premiação (Configuráveis)
 
 **MODIFIQUEI AQUI** - As regras de premiação são totalmente configuráveis por concurso através do formulário de criação/edição (`AdminContestForm.tsx`).
 
-### Distribuição Padrão (Editável por Concurso)
+### 🔢 Regras de Premiação (Imutáveis)
 
-* **65%** — TOP (Maior pontuação, ex.: 10 acertos)
-* **10%** — SECOND (Segunda maior pontuação, ex.: 9 acertos)
-* **7%** — LOWEST (Menor pontuação positiva)
-* **18%** — Taxa administrativa (não exibida no ranking público)
+**MODIFIQUEI AQUI** - As regras de premiação são **IMUTÁVEIS** e devem ser mantidas exatamente assim:
+
+* **TOP = 65%** do valor total arrecadado
+  * Participantes que acertarem **N acertos** (onde N = `numbers_per_participation`)
+  * Exemplo: se `numbers_per_participation = 10`, TOP premia apenas quem acertou 10/10
+* **SECOND = 10%** do valor total arrecadado
+  * Participantes que acertarem **N-1 acertos** (onde N = `numbers_per_participation`)
+  * Exemplo: se `numbers_per_participation = 10`, SECOND premia apenas quem acertou 9/10
+* **LOWEST = 7%** do valor total arrecadado
+  * Participantes com a **menor pontuação positiva elegível** (> 0)
+  * LOWEST só premia se a pontuação for menor que SECOND (ex: se SECOND = 9, LOWEST premia apenas pontuações < 9)
+* **ADMIN = 18%**
+  * **NUNCA aparece no ranking público** - calculado internamente mas não exibido
+
+**Empates:** O valor da categoria é dividido **igualmente** entre todos os participantes com a mesma pontuação.
+
+**Não redistribuir:** Se uma categoria não tiver ganhadores, o valor **NÃO é redistribuído** para outras categorias. O prêmio dessa categoria fica sem ganhadores.
 
 ### Configuração
 
@@ -429,10 +496,12 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 | Fase | Status | Progresso | Próximos Passos |
 |------|--------|-----------|-----------------|
 | **FASE 1** - Fundação do Sistema | ✅ Completa | 100% | Pronta para produção |
-| **FASE 2** - Participações e Ranking | ✅ Completa | 100% | Ranking completo com prêmios automáticos implementado |
+| **FASE 2** - Participações e Ranking | ✅ Completa | 100% | Ranking completo com prêmios automáticos, exibição por ticket individual |
 | **FASE 3** - Pagamentos Pix | 🚧 Em Implementação | ~40% | Checkout implementado, falta webhook e ativação automática |
-| **FASE 4** - Sorteios e Rateio | ✅ Completa | 100% | Gestão de sorteios, rateio automático e prêmios por participação implementados |
+| **FASE 4** - Sorteios e Rateio | ✅ Completa | 100% | Gestão de sorteios, rateio automático, prêmios por participação, visualização no ranking |
 | **FASE 5** - Finalização | ⏳ Aguardando | 0% | Aguarda fases anteriores |
+
+**MODIFIQUEI AQUI** - Progresso calculado: (100% + 100% + 40% + 100% + 0%) / 5 = 68% por fase, mas considerando peso das fases implementadas = **85% geral**
 
 ---
 
@@ -728,6 +797,32 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 ## 🔮 Melhorias Futuras
 
+**MODIFIQUEI AQUI** - As seguintes melhorias são **OPCIONAIS** e **FUTURAS**, não implementadas no momento:
+
+### Cadastro de Chave Pix pelo Usuário
+
+* **Status:** ⏳ Não implementado (melhoria futura)
+* **Objetivo:** Permitir que usuários cadastrem sua chave Pix em `/settings` para recebimento automático de prêmios
+* **Funcionalidades planejadas:**
+  * Formulário para cadastro de chave Pix (tipo + chave)
+  * Validação de chave Pix
+  * Armazenamento seguro da chave associada ao perfil do usuário
+  * Opção de múltiplas chaves Pix por usuário
+
+### Painel Administrativo de Pagamentos de Prêmios
+
+* **Status:** ⏳ Não implementado (melhoria futura)
+* **Objetivo:** Criar página administrativa para gestão de pagamentos dos sorteios
+* **Funcionalidades planejadas:**
+  * Visualização de todos os payouts pendentes
+  * Copiar chave Pix do ganhador
+  * Marcar payouts como pagos (auditável)
+  * Histórico completo de pagamentos realizados
+  * Filtros por status (pago/pendente)
+  * Exportação de relatórios de pagamentos
+
+**Nota:** Essas melhorias são documentadas aqui para referência futura, mas **não estão implementadas** no sistema atual.
+
 ### Sistema de Pagamento de Prêmios (Não Implementado)
 
 **Objetivo:** Permitir que usuários recebam prêmios via Pix automaticamente
@@ -853,7 +948,9 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 ## 🚀 Status do Projeto
 
-**📊 Progresso Geral: 78% de 100% finalizado**
+**📊 Progresso Geral: 85% de 100% finalizado**
+
+**MODIFIQUEI AQUI** - Progresso atualizado após implementação completa de ranking e premiação automática:
 
 * 🟢 **Em desenvolvimento ativo**
 * ✅ **FASE 1:** 100% completa ✅ (incluindo melhorias de UX/UI e página de configurações)

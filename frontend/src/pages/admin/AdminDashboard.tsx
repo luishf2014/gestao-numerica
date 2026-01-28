@@ -133,7 +133,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* CHATGPT: alterei aqui - Seção de Módulos Administrativos */}
+        {/* MODIFIQUEI AQUI - Seção de Módulos Administrativos */}
         <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-8">
           <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Módulos Administrativos</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -269,6 +269,12 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h3 className="font-semibold text-[#1F1F1F] mb-1">{contest.name}</h3>
+                      {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                      {contest.contest_code && (
+                        <p className="text-xs text-[#1F1F1F]/70 mb-1 font-mono">
+                          Código: {contest.contest_code}
+                        </p>
+                      )}
                       <p className="text-sm text-[#1F1F1F]/70 line-clamp-1">{contest.description || 'Sem descrição'}</p>
                     </div>
                     <div className="flex items-center gap-3">

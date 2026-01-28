@@ -7,6 +7,7 @@
  */
 import { supabase } from '../lib/supabase'
 import { Contest, ContestStatus } from '../types'
+import { generateContestCode } from '../utils/contestCodeGenerator'
 
 /**
  * Lista todos os concursos ativos
@@ -70,7 +71,7 @@ export async function listFinishedContests(): Promise<Contest[]> {
 /**
  * Lista todos os concursos (apenas para administradores)
  * Retorna concursos com qualquer status
- * CHATGPT: alterei aqui - Garantir que sempre retorna dados atualizados
+ * MODIFIQUEI AQUI - Garantir que sempre retorna dados atualizados
  */
 export async function listAllContests(): Promise<Contest[]> {
   const { data, error } = await supabase
@@ -135,21 +136,52 @@ export async function createContest(input: CreateContestInput): Promise<Contest>
     throw new Error('Usuário não autenticado')
   }
 
-  const { data, error } = await supabase
-    .from('contests')
-    .insert({
-      ...input,
-      status: input.status || 'draft',
-      created_by: user.id,
-    })
-    .select()
-    .single()
+  // MODIFIQUEI AQUI - Gerar código único do concurso automaticamente usando sigla do nome
+  let contestCode = generateContestCode(input.name)
+  const maxAttempts = 10
+  let attempts = 0
 
-  if (error) {
-    throw new Error(`Erro ao criar concurso: ${error.message}`)
+  while (attempts < maxAttempts) {
+    try {
+      const { data, error } = await supabase
+        .from('contests')
+        .insert({
+          ...input,
+          status: input.status || 'draft',
+          created_by: user.id,
+          contest_code: contestCode, // MODIFIQUEI AQUI - Adicionar código único do concurso
+        })
+        .select()
+        .single()
+
+      if (error) {
+        // Se erro de código duplicado, tentar gerar novo código
+        if (error.code === '23505' && error.message?.includes('contest_code')) {
+          attempts++
+          contestCode = generateContestCode(input.name) // MODIFIQUEI AQUI - Regenerar com mesmo nome
+          continue
+        }
+        throw new Error(`Erro ao criar concurso: ${error.message}`)
+      }
+
+      if (!data) {
+        attempts++
+        contestCode = generateContestCode(input.name) // MODIFIQUEI AQUI - Regenerar com mesmo nome
+        continue
+      }
+
+      return data
+    } catch (err) {
+      // Se não for erro de código duplicado, propagar o erro
+      if (err instanceof Error && !err.message.includes('contest_code')) {
+        throw err
+      }
+      attempts++
+      contestCode = generateContestCode(input.name) // MODIFIQUEI AQUI - Regenerar com mesmo nome
+    }
   }
 
-  return data
+  throw new Error('Não foi possível gerar um código único para o concurso após várias tentativas')
 }
 
 /**

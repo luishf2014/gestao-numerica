@@ -35,6 +35,7 @@ export default function AdminContestForm() {
     lowest_place_pct: 7,
     admin_fee_pct: 18,
   })
+  const [currentContest, setCurrentContest] = useState<{ contest_code?: string | null } | null>(null)
 
   useEffect(() => {
     if (isEditing && id) {
@@ -73,6 +74,8 @@ export default function AdminContestForm() {
         lowest_place_pct: contest.lowest_place_pct || 7,
         admin_fee_pct: contest.admin_fee_pct || 18,
       })
+      // MODIFIQUEI AQUI - Armazenar dados do concurso para exibir código
+      setCurrentContest(contest)
     } catch (err) {
       console.error('Erro ao carregar concurso:', err)
       setError('Erro ao carregar concurso. Tente novamente.')
@@ -215,6 +218,14 @@ export default function AdminContestForm() {
           <p className="text-[#1F1F1F]/70">
             {isEditing ? 'Atualize as informações do concurso' : 'Preencha os dados para criar um novo concurso'}
           </p>
+          {/* MODIFIQUEI AQUI - Exibir código do concurso quando estiver editando */}
+          {isEditing && currentContest?.contest_code && (
+            <div className="mt-3">
+              <span className="px-3 py-1 bg-[#1E7F43] text-white rounded-full text-xs sm:text-sm font-mono font-semibold">
+                Código do Concurso: {currentContest.contest_code}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Formulário */}

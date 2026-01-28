@@ -191,6 +191,14 @@ export default function JoinContestPage() {
           <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#1F1F1F] mb-2">
             Participar: {contest.name}
           </h1>
+          {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+          {contest.contest_code && (
+            <div className="mb-3">
+              <span className="px-3 py-1 bg-[#1E7F43] text-white rounded-full text-xs sm:text-sm font-mono font-semibold">
+                Código do Concurso: {contest.contest_code}
+              </span>
+            </div>
+          )}
           {contest.description && (
             <p className="text-[#1F1F1F]/70 mb-4">{contest.description}</p>
           )}

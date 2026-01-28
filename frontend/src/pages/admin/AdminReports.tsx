@@ -328,7 +328,7 @@ export default function AdminReports() {
                 <option value="">Selecione um concurso</option>
                 {contests.map((contest) => (
                   <option key={contest.id} value={contest.id}>
-                    {contest.name} ({contest.status})
+                    {contest.name} ({contest.status}){contest.contest_code ? ` - ${contest.contest_code}` : ''}
                   </option>
                 ))}
               </select>
@@ -428,6 +428,12 @@ export default function AdminReports() {
                   <h2 className="text-2xl font-bold text-[#1F1F1F] mb-1">
                     {reportData.contest.name}
                   </h2>
+                  {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                  {reportData.contest.contest_code && (
+                    <p className="text-xs text-[#1F1F1F]/70 mb-1 font-mono">
+                      Código do Concurso: {reportData.contest.contest_code}
+                    </p>
+                  )}
                   {reportData.draw && (
                     <p className="text-sm text-[#1F1F1F]/70">
                       Sorteio: {reportData.draw.code || `Sorteio ${formatDate(reportData.draw.draw_date)}`}
@@ -571,7 +577,7 @@ export default function AdminReports() {
                   )}
                 </div>
                 
-                {/* CHATGPT: alterei aqui - Mensagem explícita quando não houver ganhadores */}
+                {/* MODIFIQUEI AQUI - Mensagem explícita quando não houver ganhadores */}
                 {rateioData.ganhadores.length === 0 ? (
                   <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-yellow-100 rounded-full mb-4">

@@ -15,7 +15,7 @@ import logodezaqui from '../assets/logodezaqui.png'
 export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  // CHATGPT: alterei aqui - Adicionado isAdmin e profile para redirect baseado em role
+  // MODIFIQUEI AQUI - Adicionado isAdmin e profile para redirect baseado em role
   const { user, isAdmin, profile, loading: authLoading } = useAuth()
   // MODIFIQUEI AQUI - Verificar se deve abrir em modo cadastro através da query string
   const searchParams = new URLSearchParams(location.search)

@@ -93,7 +93,10 @@ export function calculateRateio(
 
   // Calcular valores
   const taxaAdministrativa = (totalRevenue * config.taxaAdministrativa) / 100
-  const valorPremiacao = totalRevenue - taxaAdministrativa
+
+  // MODIFIQUEI AQUI - valorPremiacao agora é a SOMA DAS CATEGORIAS (TOP/SECOND/LOWEST) calculadas sobre o TOTAL,
+  // e não "total - taxa". Isso garante que 65/10/7/18 sempre bata 100% do total.
+  const valorPremiacao = (totalRevenue * (config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao)) / 100
 
   // Agrupar por pontuação
   const pontuacoes = participations
@@ -105,6 +108,7 @@ export function calculateRateio(
     return {
       totalArrecadado: totalRevenue,
       taxaAdministrativa,
+      // MODIFIQUEI AQUI - se não há ganhadores, não há premiação distribuída
       valorPremiacao: 0,
       distribuicao: [],
       ganhadores: [],
@@ -122,7 +126,8 @@ export function calculateRateio(
   // Maior pontuação
   const ganhadoresMaior = participations.filter(p => p.current_score === maiorPontuacao)
   if (ganhadoresMaior.length > 0) {
-    const valorTotal = (valorPremiacao * config.maiorPontuacao) / 100
+    // MODIFIQUEI AQUI - percentuais aplicados sobre o TOTAL (não desconta admin antes)
+    const valorTotal = (totalRevenue * config.maiorPontuacao) / 100
     const valorPorGanhador = valorTotal / ganhadoresMaior.length
 
     distribuicao.push({
@@ -151,7 +156,8 @@ export function calculateRateio(
   if (segundaMaiorPontuacao && segundaMaiorPontuacao < maiorPontuacao) {
     const ganhadoresSegunda = participations.filter(p => p.current_score === segundaMaiorPontuacao)
     if (ganhadoresSegunda.length > 0) {
-      const valorTotal = (valorPremiacao * config.segundaMaiorPontuacao) / 100
+      // MODIFIQUEI AQUI - percentuais aplicados sobre o TOTAL (não desconta admin antes)
+      const valorTotal = (totalRevenue * config.segundaMaiorPontuacao) / 100
       const valorPorGanhador = valorTotal / ganhadoresSegunda.length
 
       distribuicao.push({
@@ -181,7 +187,8 @@ export function calculateRateio(
   if (menorPontuacao < (segundaMaiorPontuacao || maiorPontuacao)) {
     const ganhadoresMenor = participations.filter(p => p.current_score === menorPontuacao)
     if (ganhadoresMenor.length > 0) {
-      const valorTotal = (valorPremiacao * config.menorPontuacao) / 100
+      // MODIFIQUEI AQUI - percentuais aplicados sobre o TOTAL (não desconta admin antes)
+      const valorTotal = (totalRevenue * config.menorPontuacao) / 100
       const valorPorGanhador = valorTotal / ganhadoresMenor.length
 
       distribuicao.push({
@@ -220,16 +227,18 @@ export function calculateRateio(
  * Calcula prêmios por draw seguindo regras específicas: TOP, SECOND, LOWEST
  * MODIFIQUEI AQUI - Função para calcular prêmios por sorteio com categorias específicas
  * 
- * Regras:
- * - TOP: maior pontuação
- * - SECOND: segunda maior pontuação (se diferente da maior)
- * - LOWEST: menor pontuação POSITIVA (>0)
+ * Regras CORRETAS:
+ * - TOP: somente participações com score == numbers_per_participation (ex: 10/10)
+ * - SECOND: somente participações com score == numbers_per_participation - 1 (ex: 9/10)
+ * - LOWEST: menor pontuação POSITIVA (>0) entre todas as participações
+ * - NONE: não premiado
  * - Se categoria não tiver ganhadores, NÃO redistribui o valor
  * - maxScore == 0 significa "Não houve ganhadores nesse sorteio"
  * 
  * @param participations Participações com pontuação calculada
  * @param totalRevenue Total arrecadado (pool)
  * @param config Configuração de percentuais
+ * @param numbersPerParticipation Quantidade de números por participação (ex: 10)
  */
 export function calculateDrawPayouts(
   participations: Array<{ 
@@ -238,7 +247,8 @@ export function calculateDrawPayouts(
     current_score: number
   }>,
   totalRevenue: number,
-  config: RateioConfig
+  config: RateioConfig,
+  numbersPerParticipation: number
 ): DrawPayoutResult {
   // Validar que soma dos percentuais seja 100%
   const totalPercent = config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao + config.taxaAdministrativa
@@ -246,11 +256,15 @@ export function calculateDrawPayouts(
     throw new Error(`A soma dos percentuais deve ser 100%. Atual: ${totalPercent}%`)
   }
 
-  // Calcular pool de premiação (sem admin fee)
+  // MODIFIQUEI AQUI - NÃO descontar taxa admin antes.
+  // Admin é apenas mais uma fatia do total (18%), e TOP/SECOND/LOWEST são calculados sobre o TOTAL.
   const taxaAdministrativa = (totalRevenue * config.taxaAdministrativa) / 100
-  const prizePool = totalRevenue - taxaAdministrativa
 
-  // Obter todas as pontuações positivas ordenadas
+  // MODIFIQUEI AQUI - prizePool aqui representa apenas a soma potencial das categorias premiáveis (TOP+SECOND+LOWEST) sobre o TOTAL
+  // (isso é útil para exibir no relatório), mas os cálculos por categoria abaixo já usam totalRevenue diretamente.
+  const prizePool = (totalRevenue * (config.maiorPontuacao + config.segundaMaiorPontuacao + config.menorPontuacao)) / 100
+
+  // MODIFIQUEI AQUI - Obter todas as pontuações positivas ordenadas
   const scores = participations
     .map(p => p.current_score)
     .filter(score => score > 0)
@@ -277,30 +291,33 @@ export function calculateDrawPayouts(
     }
   }
 
-  // Determinar pontuações por categoria
-  const topScore = scores[0]
-  const secondScore = scores.find(s => s < topScore) || null
+  // MODIFIQUEI AQUI - Determinar pontuações por categoria usando numbers_per_participation
+  const topScore = numbersPerParticipation // Ex: 10/10
+  const secondScore = numbersPerParticipation - 1 // Ex: 9/10
   const lowestScore = scores[scores.length - 1] // Menor pontuação positiva
 
-  // Calcular valores por categoria (NÃO redistribui se não houver ganhadores)
+  // MODIFIQUEI AQUI - Filtrar ganhadores baseado em pontuação exata
   const topWinners = participations.filter(p => p.current_score === topScore)
-  const secondWinners = secondScore ? participations.filter(p => p.current_score === secondScore) : []
-  const lowestWinners = lowestScore < (secondScore || topScore) 
+  const secondWinners = participations.filter(p => p.current_score === secondScore)
+  // MODIFIQUEI AQUI - LOWEST só premia se pontuação for menor que SECOND
+  const lowestWinners = lowestScore > 0 && lowestScore < secondScore
     ? participations.filter(p => p.current_score === lowestScore)
     : []
 
-  // Calcular prêmios
+  // MODIFIQUEI AQUI - Calcular prêmios (NÃO redistribui se não houver ganhadores)
+  // Agora calculado sobre o TOTAL (totalRevenue), e não sobre totalRevenue - taxa.
   const prizeTop = topWinners.length > 0 
-    ? (prizePool * config.maiorPontuacao) / 100 
+    ? (totalRevenue * config.maiorPontuacao) / 100 
     : 0
-  const prizeSecond = secondWinners.length > 0 && secondScore
-    ? (prizePool * config.segundaMaiorPontuacao) / 100 
+  const prizeSecond = secondWinners.length > 0
+    ? (totalRevenue * config.segundaMaiorPontuacao) / 100 
     : 0
-  const prizeLowest = lowestWinners.length > 0 && lowestScore < (secondScore || topScore)
-    ? (prizePool * config.menorPontuacao) / 100 
+  // MODIFIQUEI AQUI - LOWEST só calcula prêmio se houver ganhadores E pontuação < secondScore
+  const prizeLowest = lowestWinners.length > 0 && lowestScore > 0 && lowestScore < secondScore
+    ? (totalRevenue * config.menorPontuacao) / 100 
     : 0
 
-  // Montar resultado das categorias
+  // MODIFIQUEI AQUI - Montar resultado das categorias
   const categories = {
     TOP: topWinners.length > 0 ? {
       score: topScore,
@@ -308,13 +325,13 @@ export function calculateDrawPayouts(
       amountPerWinner: prizeTop / topWinners.length,
       totalAmount: prizeTop,
     } : null,
-    SECOND: secondWinners.length > 0 && secondScore ? {
+    SECOND: secondWinners.length > 0 ? {
       score: secondScore,
       winnersCount: secondWinners.length,
       amountPerWinner: prizeSecond / secondWinners.length,
       totalAmount: prizeSecond,
     } : null,
-    LOWEST: lowestWinners.length > 0 && lowestScore < (secondScore || topScore) ? {
+    LOWEST: lowestWinners.length > 0 && lowestScore > 0 && lowestScore < secondScore ? {
       score: lowestScore,
       winnersCount: lowestWinners.length,
       amountPerWinner: prizeLowest / lowestWinners.length,
@@ -322,7 +339,7 @@ export function calculateDrawPayouts(
     } : null,
   }
 
-  // Montar payouts por participação
+  // MODIFIQUEI AQUI - Montar payouts por participação usando pontuações exatas
   const payouts = participations.map(p => {
     let category: 'TOP' | 'SECOND' | 'LOWEST' | 'NONE' = 'NONE'
     let amountWon = 0
@@ -330,10 +347,10 @@ export function calculateDrawPayouts(
     if (p.current_score === topScore && topWinners.length > 0) {
       category = 'TOP'
       amountWon = prizeTop / topWinners.length
-    } else if (secondScore && p.current_score === secondScore && secondWinners.length > 0) {
+    } else if (p.current_score === secondScore && secondWinners.length > 0) {
       category = 'SECOND'
       amountWon = prizeSecond / secondWinners.length
-    } else if (lowestScore < (secondScore || topScore) && p.current_score === lowestScore && lowestWinners.length > 0) {
+    } else if (lowestScore > 0 && lowestScore < secondScore && p.current_score === lowestScore && lowestWinners.length > 0) {
       category = 'LOWEST'
       amountWon = prizeLowest / lowestWinners.length
     }

@@ -10,7 +10,7 @@ import { generateTicketCode } from '../utils/ticketCodeGenerator'
 
 /**
  * Cria uma nova participação em um concurso
- * CHATGPT: alterei aqui - sempre usa auth.uid() para user_id, não aceita do frontend
+ * MODIFIQUEI AQUI - sempre usa auth.uid() para user_id, não aceita do frontend
  * 
  * @param params Parâmetros da participação
  * @returns Participação criada
@@ -31,10 +31,10 @@ export async function createParticipation(params: {
     throw new Error('Dados inválidos para criar participação')
   }
 
-  // CHATGPT: alterei aqui - Validar se o concurso está ativo e pode aceitar participações
+  // MODIFIQUEI AQUI - Validar se o concurso está ativo e pode aceitar participações
   const { data: contest, error: contestError } = await supabase
     .from('contests')
-    .select('id, status, end_date')
+    .select('id, status, start_date, end_date')
     .eq('id', params.contestId)
     .single()
 
@@ -52,12 +52,21 @@ export async function createParticipation(params: {
     throw new Error('Este concurso não está ativo no momento')
   }
 
+  const now = new Date()
+  const startDate = new Date(contest.start_date)
+  const endDate = new Date(contest.end_date)
+
+  // MODIFIQUEI AQUI - Verificar se a data de início já começou
+  if (now < startDate) {
+    throw new Error('Este concurso ainda não começou. As participações estarão disponíveis a partir da data de início.')
+  }
+
   // Verificar se a data de encerramento já passou
-  if (contest.end_date && new Date(contest.end_date) < new Date()) {
+  if (endDate < now) {
     throw new Error('O prazo para participação neste concurso já encerrou')
   }
 
-  // CHATGPT: alterei aqui - Verificar se já existe sorteio para este concurso (backup adicional)
+  // MODIFIQUEI AQUI - Verificar se já existe sorteio para este concurso (backup adicional)
   const { data: draws, error: drawsError } = await supabase
     .from('draws')
     .select('id')
@@ -68,10 +77,50 @@ export async function createParticipation(params: {
     throw new Error('Este concurso já possui sorteios realizados e não aceita novas participações')
   }
 
-  // MODIFIQUEI AQUI - Garantir que os números são válidos (inteiros positivos)
-  const validNumbers = params.numbers.filter(n => Number.isInteger(n) && n > 0)
+  // MODIFIQUEI AQUI - Garantir que os números são válidos (inteiros não-negativos)
+  // Normalizar e validar números
+  if (!Array.isArray(params.numbers) || params.numbers.length === 0) {
+    throw new Error('Números não fornecidos ou inválidos.')
+  }
+
+  const validNumbers = params.numbers.map(n => {
+    // Se já for número, verificar diretamente
+    if (typeof n === 'number') {
+      return Number.isInteger(n) && n >= 0 ? n : null
+    }
+    // Se for string, converter
+    if (typeof n === 'string') {
+      const num = parseInt(n, 10)
+      return Number.isInteger(num) && !Number.isNaN(num) && num >= 0 ? num : null
+    }
+    // Tentar converter para número
+    const num = Number(n)
+    return Number.isInteger(num) && !Number.isNaN(num) && num >= 0 ? num : null
+  }).filter((n): n is number => n !== null)
+  
   if (validNumbers.length !== params.numbers.length) {
+    console.error('[participationsService] Números recebidos:', params.numbers, 'Tipo:', typeof params.numbers[0])
+    console.error('[participationsService] Números válidos:', validNumbers)
     throw new Error('Números inválidos. Por favor, selecione apenas números válidos.')
+  }
+
+  // MODIFIQUEI AQUI - Validar se os números estão dentro do intervalo do concurso
+  // Buscar informações do concurso para validar intervalo
+  const { data: contestInfo } = await supabase
+    .from('contests')
+    .select('min_number, max_number')
+    .eq('id', params.contestId)
+    .single()
+
+  if (contestInfo) {
+    const invalidRange = validNumbers.filter(n => 
+      n < contestInfo.min_number || n > contestInfo.max_number
+    )
+    if (invalidRange.length > 0) {
+      throw new Error(
+        `Números fora do intervalo permitido (${contestInfo.min_number} - ${contestInfo.max_number}): ${invalidRange.join(', ')}`
+      )
+    }
   }
 
   // MODIFIQUEI AQUI - Gerar código/ticket único para a participação
@@ -87,7 +136,7 @@ export async function createParticipation(params: {
         .insert({
           contest_id: params.contestId,
           user_id: user.id, // CHATGPT: sempre usa auth.uid(), não aceita do frontend
-          numbers: validNumbers, // MODIFIQUEI AQUI - Usar números validados
+          numbers: validNumbers, // MODIFIQUEI AQUI - Usar números validados e convertidos
           status: 'pending', // Status padrão
           ticket_code: ticketCode, // MODIFIQUEI AQUI - Adicionar código/ticket único
         })
@@ -294,7 +343,7 @@ export async function activateParticipation(participationId: string): Promise<Pa
     throw new Error('Participação não encontrada')
   }
 
-  // CHATGPT: alterei aqui - Atualizar usando maybeSingle() para evitar erro 406
+  // MODIFIQUEI AQUI - Atualizar usando maybeSingle() para evitar erro 406
   console.log(`[participationsService] Ativando participação ${participationId}...`)
   const { data, error } = await supabase
     .from('participations')

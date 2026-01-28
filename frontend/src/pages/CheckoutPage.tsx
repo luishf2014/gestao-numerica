@@ -10,7 +10,8 @@ import { getContestById } from '../services/contestsService'
 import { createParticipation } from '../services/participationsService'
 import { createPixPaymentRecord } from '../services/paymentsService'
 import { createPixPayment } from '../services/asaasService'
-import { Contest, Participation } from '../types'
+import { getDiscountByCode, calculateDiscountedPrice, incrementDiscountUses } from '../services/discountsService'
+import { Contest, Participation, Discount } from '../types'
 import { useAuth } from '../contexts/AuthContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -36,6 +37,13 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const participationCreatedRef = useRef(false) // MODIFIQUEI AQUI - Flag para evitar criação duplicada
+  const isCreatingRef = useRef(false) // MODIFIQUEI AQUI - Flag para evitar race condition
+  
+  // MODIFIQUEI AQUI - Estados para desconto
+  const [discountCode, setDiscountCode] = useState<string>('')
+  const [appliedDiscount, setAppliedDiscount] = useState<Discount | null>(null)
+  const [validatingDiscount, setValidatingDiscount] = useState(false)
+  const [discountError, setDiscountError] = useState<string | null>(null)
 
   useEffect(() => {
     // MODIFIQUEI AQUI - Verificar se há números selecionados
@@ -50,10 +58,54 @@ export default function CheckoutPage() {
       return
     }
 
-    setSelectedNumbers(state.selectedNumbers)
+    // MODIFIQUEI AQUI - Garantir que os números são números válidos
+    // Primeiro, normalizar os números (converter strings para números)
+    const normalizedNumbers = state.selectedNumbers.map(n => {
+      if (typeof n === 'number') return n
+      if (typeof n === 'string') {
+        const parsed = parseInt(n, 10)
+        return Number.isNaN(parsed) ? null : parsed
+      }
+      const num = Number(n)
+      return Number.isNaN(num) ? null : num
+    })
+
+    // Filtrar apenas números válidos (inteiros, não null, >= 0)
+    const validNumbers = normalizedNumbers.filter((n): n is number => 
+      n !== null && Number.isInteger(n) && n >= 0
+    ).sort((a, b) => a - b) // MODIFIQUEI AQUI - Ordenar números
+
+    if (validNumbers.length !== state.selectedNumbers.length) {
+      console.error('[CheckoutPage] Erro ao processar números:', state.selectedNumbers)
+      console.error('[CheckoutPage] Números normalizados:', normalizedNumbers)
+      console.error('[CheckoutPage] Números válidos:', validNumbers)
+      setError('Números inválidos. Por favor, selecione novamente.')
+      return
+    }
+
+    setSelectedNumbers(validNumbers)
+  }, [location.state, id, navigate])
+
+  useEffect(() => {
+    let cancelled = false // MODIFIQUEI AQUI - Flag para cancelar se o componente desmontar
 
     async function loadData() {
-      if (!id || !user || participationCreatedRef.current) return // MODIFIQUEI AQUI - Evitar criação duplicada
+      // MODIFIQUEI AQUI - Múltiplas verificações para evitar criação duplicada
+      if (!id || !user || participationCreatedRef.current || isCreatingRef.current || selectedNumbers.length === 0) {
+        console.log('[CheckoutPage] loadData cancelado:', {
+          hasId: !!id,
+          hasUser: !!user,
+          alreadyCreated: participationCreatedRef.current,
+          isCreating: isCreatingRef.current,
+          hasNumbers: selectedNumbers.length > 0
+        })
+        return
+      }
+
+      // MODIFIQUEI AQUI - Marcar como criando ANTES de qualquer operação assíncrona
+      console.log('[CheckoutPage] Iniciando criação de participação...')
+      isCreatingRef.current = true
+      participationCreatedRef.current = true
 
       try {
         setLoading(true)
@@ -61,6 +113,8 @@ export default function CheckoutPage() {
 
         // Carregar concurso
         const contestData = await getContestById(id)
+        if (cancelled) return
+
         if (!contestData) {
           setError('Concurso não encontrado')
           return
@@ -71,31 +125,51 @@ export default function CheckoutPage() {
           return
         }
 
+        // MODIFIQUEI AQUI - Validar se os números estão dentro do intervalo do concurso
+        const invalidNumbers = selectedNumbers.filter(n => 
+          n < contestData.min_number || n > contestData.max_number
+        )
+        if (invalidNumbers.length > 0) {
+          setError(
+            `Números fora do intervalo permitido (${contestData.min_number} - ${contestData.max_number}): ${invalidNumbers.join(', ')}`
+          )
+          return
+        }
+
         setContest(contestData)
 
         // MODIFIQUEI AQUI - Criar participação automaticamente ao entrar no checkout (apenas uma vez)
-        if (!participationCreatedRef.current) {
-          participationCreatedRef.current = true
-          const participationData = await createParticipation({
-            contestId: id,
-            numbers: state.selectedNumbers,
-          })
+        const participationData = await createParticipation({
+          contestId: id,
+          numbers: selectedNumbers, // MODIFIQUEI AQUI - Usar números já validados do estado
+        })
 
-          setParticipation(participationData)
-        }
+        if (cancelled) return
+
+        setParticipation(participationData)
       } catch (err) {
+        if (cancelled) return
         console.error('Erro ao carregar dados:', err)
         participationCreatedRef.current = false // MODIFIQUEI AQUI - Resetar flag em caso de erro
+        isCreatingRef.current = false
         setError(err instanceof Error ? err.message : 'Erro ao processar participação')
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          isCreatingRef.current = false
+        }
       }
     }
 
-    if (!authLoading && user) {
+    if (!authLoading && user && selectedNumbers.length > 0) {
       loadData()
     }
-  }, [id, user, authLoading, navigate, location.state])
+
+    // MODIFIQUEI AQUI - Cleanup function para cancelar operações pendentes
+    return () => {
+      cancelled = true
+    }
+  }, [id, user, authLoading, selectedNumbers])
 
   const handlePaymentMethodSelect = (method: 'pix' | 'cash') => {
     setPaymentMethod(method)
@@ -105,14 +179,120 @@ export default function CheckoutPage() {
   const handleCashPayment = async () => {
     if (!participation || !contest) return
 
-    // MODIFIQUEI AQUI - Pagamento em dinheiro não cria pagamento automaticamente
-    // Apenas confirma que a participação foi criada e ficará pendente até o admin ativar
-    setSuccess(true)
-    
-    // Redirecionar após 3 segundos
-    // setTimeout(() => {
-    //   navigate(`/contests/${id}`)
-    // }, 3000)
+    try {
+      setProcessing(true)
+      setError(null)
+
+      // MODIFIQUEI AQUI - Incrementar uso do desconto se aplicado (mesmo em pagamento em dinheiro)
+      // O admin registrará o pagamento com o valor correto depois
+      if (appliedDiscount) {
+        try {
+          await incrementDiscountUses(appliedDiscount.id)
+        } catch (err) {
+          console.error('Erro ao incrementar uso do desconto:', err)
+          // Não falhar o processo se houver erro ao incrementar desconto
+        }
+      }
+
+      // MODIFIQUEI AQUI - Pagamento em dinheiro não cria pagamento automaticamente
+      // Apenas confirma que a participação foi criada e ficará pendente até o admin ativar
+      // O admin deve registrar o pagamento com o valor final (com desconto aplicado)
+      setSuccess(true)
+    } catch (err) {
+      console.error('Erro ao processar pagamento em dinheiro:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao processar participação')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  // MODIFIQUEI AQUI - Função para validar e aplicar desconto
+  const handleApplyDiscount = async () => {
+    if (!discountCode.trim() || !contest) return
+
+    try {
+      setValidatingDiscount(true)
+      setDiscountError(null)
+
+      const discount = await getDiscountByCode(discountCode.trim())
+      
+      if (!discount) {
+        setDiscountError('Código de desconto não encontrado')
+        setAppliedDiscount(null)
+        return
+      }
+
+      // Validar se está ativo
+      if (!discount.is_active) {
+        setDiscountError('Este desconto não está ativo')
+        setAppliedDiscount(null)
+        return
+      }
+
+      // Validar datas
+      const now = new Date()
+      const startDate = new Date(discount.start_date)
+      const endDate = new Date(discount.end_date)
+
+      if (now < startDate) {
+        setDiscountError('Este desconto ainda não está válido')
+        setAppliedDiscount(null)
+        return
+      }
+
+      if (now > endDate) {
+        setDiscountError('Este desconto expirou')
+        setAppliedDiscount(null)
+        return
+      }
+
+      // Validar limite de usos
+      if (discount.max_uses && discount.current_uses >= discount.max_uses) {
+        setDiscountError('Este desconto atingiu o limite de usos')
+        setAppliedDiscount(null)
+        return
+      }
+
+      // Validar se é específico do concurso ou global
+      if (discount.contest_id && discount.contest_id !== contest.id) {
+        setDiscountError('Este desconto não é válido para este concurso')
+        setAppliedDiscount(null)
+        return
+      }
+
+      // Desconto válido
+      setAppliedDiscount(discount)
+      setDiscountError(null)
+    } catch (err) {
+      console.error('Erro ao validar desconto:', err)
+      setDiscountError(err instanceof Error ? err.message : 'Erro ao validar desconto')
+      setAppliedDiscount(null)
+    } finally {
+      setValidatingDiscount(false)
+    }
+  }
+
+  // MODIFIQUEI AQUI - Função para remover desconto
+  const handleRemoveDiscount = () => {
+    setAppliedDiscount(null)
+    setDiscountCode('')
+    setDiscountError(null)
+  }
+
+  // MODIFIQUEI AQUI - Calcular valor final com desconto
+  const getFinalAmount = (): number => {
+    const baseAmount = contest?.participation_value || 0
+    if (appliedDiscount) {
+      return calculateDiscountedPrice(baseAmount, appliedDiscount)
+    }
+    return baseAmount
+  }
+
+  // MODIFIQUEI AQUI - Calcular valor do desconto
+  const getDiscountAmount = (): number => {
+    const baseAmount = contest?.participation_value || 0
+    const finalAmount = getFinalAmount()
+    return baseAmount - finalAmount
   }
 
   const handlePixPayment = async () => {
@@ -122,12 +302,15 @@ export default function CheckoutPage() {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Criar pagamento Pix e gerar QR Code
+      // MODIFIQUEI AQUI - Calcular valor final com desconto aplicado
+      const finalAmount = getFinalAmount()
+
+      // MODIFIQUEI AQUI - Criar pagamento Pix e gerar QR Code com valor com desconto
       const pixData = await createPixPayment({
         participationId: participation.id,
         ticketCode: participation.ticket_code || '',
-        amount: contest.participation_value || 0,
-        description: `Participação no concurso ${contest.name} - Ticket: ${participation.ticket_code}`,
+        amount: finalAmount,
+        description: `Participação no concurso ${contest.name} - Ticket: ${participation.ticket_code}${appliedDiscount ? ` - Desconto: ${appliedDiscount.code}` : ''}`,
         customerName: profile.name || 'Cliente',
         customerEmail: profile.email || undefined,
         customerPhone: profile.phone || undefined,
@@ -137,16 +320,26 @@ export default function CheckoutPage() {
       setPixPayload(pixData.qrCode.payload)
       setPixExpirationDate(pixData.qrCode.expirationDate)
 
-      // MODIFIQUEI AQUI - Salvar registro do pagamento Pix no banco
+      // MODIFIQUEI AQUI - Salvar registro do pagamento Pix no banco com valor final
       await createPixPaymentRecord({
         participationId: participation.id,
-        amount: contest.participation_value || 0,
+        amount: finalAmount,
         externalId: pixData.id,
         qrCodeData: {
           payload: pixData.qrCode.payload,
           expirationDate: pixData.qrCode.expirationDate,
         },
       })
+
+      // MODIFIQUEI AQUI - Incrementar uso do desconto se aplicado
+      if (appliedDiscount) {
+        try {
+          await incrementDiscountUses(appliedDiscount.id)
+        } catch (err) {
+          console.error('Erro ao incrementar uso do desconto:', err)
+          // Não falhar o pagamento se houver erro ao incrementar desconto
+        }
+      }
 
       setSuccess(true)
     } catch (err) {
@@ -228,7 +421,20 @@ export default function CheckoutPage() {
   }
 
   if (!user || !contest || !participation) {
-    return null
+    return (
+      <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
+        <Header />
+        <div className="flex items-center justify-center flex-1 px-4">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto mb-4"></div>
+            <p className="text-[#1F1F1F]/70">
+              {!user ? 'Verificando autenticação...' : !contest ? 'Carregando concurso...' : 'Criando participação...'}
+            </p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    )
   }
 
   const participationValue = contest.participation_value || 0
@@ -285,6 +491,12 @@ export default function CheckoutPage() {
             <div>
               <span className="text-sm text-[#1F1F1F]/60">Concurso:</span>
               <p className="font-semibold text-[#1F1F1F]">{contest.name}</p>
+              {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+              {contest.contest_code && (
+                <p className="text-xs text-[#1F1F1F]/70 mt-1 font-mono">
+                  Código do Concurso: {contest.contest_code}
+                </p>
+              )}
             </div>
 
             {/* Números Selecionados */}
@@ -320,13 +532,98 @@ export default function CheckoutPage() {
               </p>
             </div>
 
-            {/* Valor */}
+            {/* MODIFIQUEI AQUI - Seção de Desconto */}
+            {!success && (
+              <div className="pt-4 border-t border-[#E5E5E5]">
+                <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                  Código de Desconto (Opcional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={discountCode}
+                    onChange={(e) => {
+                      setDiscountCode(e.target.value.toUpperCase())
+                      setDiscountError(null)
+                      if (appliedDiscount) {
+                        setAppliedDiscount(null)
+                      }
+                    }}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && discountCode.trim()) {
+                        handleApplyDiscount()
+                      }
+                    }}
+                    placeholder="Digite o código do cupom"
+                    className="flex-1 px-4 py-2 border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E7F43]"
+                    disabled={validatingDiscount || processing}
+                  />
+                  {!appliedDiscount ? (
+                    <button
+                      onClick={handleApplyDiscount}
+                      disabled={validatingDiscount || processing || !discountCode.trim()}
+                      className="px-6 py-2 bg-[#1E7F43] text-white rounded-lg font-semibold hover:bg-[#3CCB7F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {validatingDiscount ? 'Validando...' : 'Aplicar'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleRemoveDiscount}
+                      disabled={processing}
+                      className="px-6 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:opacity-50"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+                {discountError && (
+                  <p className="text-sm text-red-600 mt-2">{discountError}</p>
+                )}
+                {appliedDiscount && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-green-800">
+                          ✓ Desconto aplicado: {appliedDiscount.name}
+                        </p>
+                        {appliedDiscount.description && (
+                          <p className="text-xs text-green-700 mt-1">{appliedDiscount.description}</p>
+                        )}
+                      </div>
+                      <span className="text-lg font-bold text-green-700">
+                        {appliedDiscount.discount_type === 'percentage'
+                          ? `${appliedDiscount.discount_value}%`
+                          : formatCurrency(appliedDiscount.discount_value)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MODIFIQUEI AQUI - Valor com desconto aplicado */}
             <div className="pt-4 border-t border-[#E5E5E5]">
-              <div className="flex justify-between items-center">
-                <span className="text-lg font-semibold text-[#1F1F1F]">Valor Total:</span>
-                <span className="text-2xl font-extrabold text-[#1E7F43]">
-                  {formatCurrency(participationValue)}
-                </span>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-[#1F1F1F]">Valor:</span>
+                  <span className="text-xl font-bold text-[#1F1F1F]">
+                    {formatCurrency(participationValue)}
+                  </span>
+                </div>
+                {appliedDiscount && getDiscountAmount() > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-[#1F1F1F]/70">Desconto ({appliedDiscount.code}):</span>
+                    <span className="text-sm font-semibold text-red-600">
+                      -{formatCurrency(getDiscountAmount())}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-[#E5E5E5]">
+                  <span className="text-lg font-semibold text-[#1F1F1F]">Valor Total:</span>
+                  <span className="text-2xl font-extrabold text-[#1E7F43]">
+                    {formatCurrency(getFinalAmount())}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -483,7 +780,12 @@ export default function CheckoutPage() {
               {/* Informações */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Valor:</strong> {formatCurrency(participationValue)}
+                  <strong>Valor:</strong> {formatCurrency(getFinalAmount())}
+                  {appliedDiscount && getDiscountAmount() > 0 && (
+                    <span className="ml-2 text-xs">
+                      (desconto de {formatCurrency(getDiscountAmount())} aplicado)
+                    </span>
+                  )}
                 </p>
                 {pixExpirationDate && (
                   <p className="text-sm text-blue-800 mt-1">

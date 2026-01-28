@@ -28,9 +28,9 @@ export default function ContestsListPage() {
       try {
         setLoading(true)
         setError(null)
-        console.log('[ContestsListPage] CHATGPT: alterei aqui - Carregando concursos ativos e finalizados...')
+        console.log('[ContestsListPage] MODIFIQUEI AQUI - Carregando concursos ativos e finalizados...')
         
-        // CHATGPT: alterei aqui - Carregar concursos ativos e finalizados em paralelo
+        // MODIFIQUEI AQUI - Carregar concursos ativos e finalizados em paralelo
         const [activeData, finishedData] = await Promise.all([
           listActiveContests(),
           listFinishedContests(),
@@ -38,7 +38,7 @@ export default function ContestsListPage() {
         
         console.log('[ContestsListPage] Concursos ativos:', activeData.length, 'Finalizados:', finishedData.length)
         
-        // CHATGPT: alterei aqui - Verificar sorteios para todos os concursos (ativos + finalizados)
+        // MODIFIQUEI AQUI - Verificar sorteios para todos os concursos (ativos + finalizados)
         const drawsMap: Record<string, boolean> = {}
         const allContests = [...activeData, ...finishedData]
         
@@ -132,7 +132,7 @@ export default function ContestsListPage() {
         </div>
       </div>
 
-      {/* CHATGPT: alterei aqui - Abas para alternar entre Ativos e Histórico */}
+      {/* MODIFIQUEI AQUI - Abas para alternar entre Ativos e Histórico */}
       <div className="container mx-auto px-2 sm:px-4 mb-6 max-w-7xl">
         <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
           <button

@@ -41,6 +41,8 @@ export interface Contest {
   second_place_pct?: number
   lowest_place_pct?: number
   admin_fee_pct?: number
+  // MODIFIQUEI AQUI - Código único do concurso (ex: CG-20250124-A1B2C3)
+  contest_code?: string | null
   created_by: string
   created_at: string
   updated_at: string

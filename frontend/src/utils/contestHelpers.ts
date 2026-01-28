@@ -11,6 +11,7 @@ import { Contest } from '../types'
  * Verifica se um concurso ainda aceita participações
  * MODIFIQUEI AQUI - Função para verificar se concurso aceita participações baseado em:
  * - Status deve ser 'active'
+ * - Data de início (start_date) deve ter começado
  * - Data de encerramento (end_date) não deve ter passado
  * - Não deve haver sorteios realizados
  * 
@@ -29,10 +30,16 @@ export function canAcceptParticipations(contest: Contest, hasDraws: boolean = fa
     return false
   }
 
-  // Verificar se a data de encerramento já passou
   const now = new Date()
+  const startDate = new Date(contest.start_date)
   const endDate = new Date(contest.end_date)
+
+  // MODIFIQUEI AQUI - Verificar se a data de início já começou
+  if (now < startDate) {
+    return false
+  }
   
+  // Verificar se a data de encerramento já passou
   if (endDate < now) {
     return false
   }

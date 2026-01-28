@@ -294,6 +294,14 @@ export default function AdminContestsList() {
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-xl font-bold text-[#1F1F1F] mb-2">{contest.name}</h3>
+                    {/* MODIFIQUEI AQUI - Exibir código do concurso */}
+                    {contest.contest_code && (
+                      <div className="mb-2">
+                        <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-full text-xs font-mono font-semibold">
+                          Código do Concurso: {contest.contest_code}
+                        </span>
+                      </div>
+                    )}
                     {contest.description && (
                       <p className="text-sm text-[#1F1F1F]/70 line-clamp-2 mb-3">
                         {contest.description}

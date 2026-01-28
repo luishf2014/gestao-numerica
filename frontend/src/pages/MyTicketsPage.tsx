@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listMyParticipations } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
+import { getPayoutByParticipationAndDraw } from '../services/payoutsService'
 import { Participation, Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
@@ -24,6 +25,7 @@ export default function MyTicketsPage() {
   const { user, loading: authLoading } = useAuth()
   const [participations, setParticipations] = useState<ParticipationWithContest[]>([])
   const [contestsWithDraws, setContestsWithDraws] = useState<Record<string, boolean>>({})
+  const [payoutsByParticipation, setPayoutsByParticipation] = useState<Record<string, number>>({}) // participationId -> total amount_won
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,14 +45,27 @@ export default function MyTicketsPage() {
         const data = await listMyParticipations()
         setParticipations(data)
         
-        // MODIFIQUEI AQUI - Verificar sorteios para cada concurso
+        // MODIFIQUEI AQUI - Verificar sorteios para cada concurso e buscar payouts por draw específico
         const drawsMap: Record<string, boolean> = {}
+        const drawsByContest: Record<string, string> = {} // contestId -> drawId (último/único draw)
+        const payoutsMap: Record<string, number> = {} // participationId -> amount_won
+        
         const uniqueContestIds = [...new Set(data.map(p => p.contest_id).filter(Boolean))]
+        
+        // Buscar draws de cada concurso e mapear o draw mais recente
         await Promise.all(
           uniqueContestIds.map(async (contestId) => {
             try {
               const draws = await listDrawsByContestId(contestId)
               drawsMap[contestId] = draws.length > 0
+              // MODIFIQUEI AQUI - Cada concurso tem 1 sorteio, pegar o último/único
+              if (draws.length > 0) {
+                // Ordenar por data desc e pegar o primeiro (mais recente)
+                const sortedDraws = [...draws].sort((a, b) => 
+                  new Date(b.draw_date).getTime() - new Date(a.draw_date).getTime()
+                )
+                drawsByContest[contestId] = sortedDraws[0].id
+              }
             } catch (err) {
               console.error(`Erro ao verificar sorteios do concurso ${contestId}:`, err)
               drawsMap[contestId] = false
@@ -58,6 +73,26 @@ export default function MyTicketsPage() {
           })
         )
         setContestsWithDraws(drawsMap)
+        
+        // MODIFIQUEI AQUI - Buscar payout específico por participation e draw do concurso
+        await Promise.all(
+          data.map(async (participation) => {
+            if (!participation.contest_id) return
+            
+            const drawId = drawsByContest[participation.contest_id]
+            if (!drawId) return // Concurso ainda não tem sorteio
+            
+            try {
+              const payout = await getPayoutByParticipationAndDraw(participation.id, drawId)
+              if (payout && payout.amount_won > 0) {
+                payoutsMap[participation.id] = payout.amount_won
+              }
+            } catch (err) {
+              console.error(`Erro ao buscar payout da participação ${participation.id} no draw ${drawId}:`, err)
+            }
+          })
+        )
+        setPayoutsByParticipation(payoutsMap)
       } catch (err) {
         console.error('[MyTicketsPage] Erro ao carregar participações:', err)
         const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar seus tickets'
@@ -191,7 +226,13 @@ export default function MyTicketsPage() {
                       }`}>
                         {participation.status === 'active' ? '● Ativo' : participation.status === 'pending' ? '● Pendente' : '● Cancelado'}
                       </span>
-                      {participation.ticket_code && (
+                      {/* MODIFIQUEI AQUI - Exibir código combinado CG-XXXXXX-TK-XXXXXX */}
+                      {participation.ticket_code && participation.contest?.contest_code && (
+                        <span className="px-2 sm:px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-mono text-xs font-bold whitespace-nowrap">
+                          {participation.contest.contest_code}-{participation.ticket_code}
+                        </span>
+                      )}
+                      {participation.ticket_code && !participation.contest?.contest_code && (
                         <span className="px-2 sm:px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-mono text-xs font-bold whitespace-nowrap">
                           {participation.ticket_code}
                         </span>
@@ -207,6 +248,7 @@ export default function MyTicketsPage() {
                     <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">
                       {participation.contest?.name || 'Concurso não encontrado'}
                     </h3>
+                    {/* MODIFIQUEI AQUI - Código do concurso já aparece combinado com o ticket acima */}
                     {participation.contest?.description && (
                       <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2 mb-2">
                         {participation.contest.description}
@@ -283,6 +325,41 @@ export default function MyTicketsPage() {
                     </div>
                   )}
                 </div>
+                
+                {/* MODIFIQUEI AQUI - Resultado Financeiro */}
+                {contestsWithDraws[participation.contest_id || ''] && (
+                  <div className={`mt-4 rounded-lg sm:rounded-xl border-2 p-3 sm:p-4 ${
+                    payoutsByParticipation[participation.id] > 0
+                      ? 'bg-gradient-to-br from-[#F4C430]/10 to-[#FFD700]/10 border-[#F4C430]'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    {payoutsByParticipation[participation.id] > 0 ? (
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl sm:text-3xl">🏆</div>
+                        <div className="flex-1">
+                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-1">
+                            Resultado Financeiro
+                          </div>
+                          <div className="text-lg sm:text-xl font-extrabold text-[#1E7F43]">
+                            Premiado: R$ {payoutsByParticipation[participation.id].toFixed(2).replace('.', ',')}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="text-2xl sm:text-3xl">❌</div>
+                        <div className="flex-1">
+                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide mb-1">
+                            Resultado Financeiro
+                          </div>
+                          <div className="text-sm sm:text-base font-semibold text-[#1F1F1F]/70">
+                            Não premiado neste sorteio
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

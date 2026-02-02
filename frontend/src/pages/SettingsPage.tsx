@@ -62,6 +62,12 @@ export default function SettingsPage() {
     setSuccess(null)
   }, [activeSection])
 
+  // Função para mascarar CPF (123.***.***-09)
+  const maskCpf = (cpfValue?: string): string => {
+    if (!cpfValue || cpfValue.length !== 11) return 'Não informado'
+    return `${cpfValue.slice(0, 3)}.***.***-${cpfValue.slice(9, 11)}`
+  }
+
   const loadUserData = async () => {
     try {
       setLoading(true)
@@ -397,6 +403,18 @@ export default function SettingsPage() {
                       className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                       placeholder="seu@email.com"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                      CPF
+                    </label>
+                    <div className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F]">
+                      {profile?.cpf ? maskCpf(profile.cpf) : 'Não informado'}
+                    </div>
+                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                      CPF não pode ser alterado após o cadastro
+                    </p>
                   </div>
 
                   <div className="pt-4 border-t border-[#E5E5E5]">

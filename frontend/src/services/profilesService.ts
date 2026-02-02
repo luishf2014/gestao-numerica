@@ -39,7 +39,7 @@ export async function getCurrentUserProfile(): Promise<User | null> {
     console.log('[profilesService] Buscando perfil do usuário atual usando RLS...')
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, name, phone, is_admin, created_at, updated_at')
+      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
       .eq('id', authUser.id)
       .maybeSingle()
     
@@ -80,7 +80,7 @@ export async function getUserProfileById(userId: string): Promise<User | null> {
     // MODIFIQUEI AQUI - Busca principal pelo id do profile
     const byId = await supabase
       .from('profiles')
-      .select('id, email, name, phone, is_admin, created_at, updated_at')
+      .select('id, email, name, phone, cpf, is_admin, created_at, updated_at')
       .eq('id', userId)
       .maybeSingle()
     

@@ -48,6 +48,7 @@ BEGIN
     email,
     name,
     phone,
+    cpf,
     is_admin,
     created_at,
     updated_at
@@ -65,6 +66,7 @@ BEGIN
       ''                                       -- String vazia se nenhum existir
     ),
     NEW.raw_user_meta_data->>'phone',         -- Telefone do metadata (pode ser NULL)
+    NEW.raw_user_meta_data->>'cpf',           -- CPF do metadata (normalizado, somente números)
     FALSE,                                     -- Por padrão, não é administrador
     NOW(),                                     -- Timestamp de criação
     NOW()                                      -- Timestamp de atualização

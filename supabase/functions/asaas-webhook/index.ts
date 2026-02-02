@@ -9,7 +9,7 @@
  * - Ativar participação automaticamente
  *
  * Segurança:
- * - Validação de token do webhook
+ * - Validação de token do webhook (ASAAS)
  * - Uso de Service Role (bypass RLS)
  * - Idempotência garantida
  */
@@ -17,47 +17,51 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-/**
- * Estrutura flexível do webhook do Asaas
- */
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'content-type, asaas-access-token, access_token',
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 interface AsaasWebhookEvent {
   event?: string
   payment?: {
     id?: string
     status?: string
     paymentDate?: string
-    externalReference?: string
   }
   id?: string
   status?: string
   paymentDate?: string
-  externalReference?: string
 }
 
 serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders })
+  }
+
   try {
-    /**
-     * Validar token de autenticação do webhook
-     */
+    // 🔐 Token do webhook (ASAAS)
     const webhookToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN')
-    const receivedToken = req.headers.get('X-Webhook-Token')
+
+    const receivedToken =
+      req.headers.get('asaas-access-token') ||
+      req.headers.get('access_token')
 
     if (!webhookToken || receivedToken !== webhookToken) {
-      return new Response(
-        JSON.stringify({ error: 'Webhook não autorizado' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      )
+      console.warn('[asaas-webhook] token inválido')
+      return jsonResponse({ error: 'Webhook não autorizado' }, 401)
     }
 
-    /**
-     * Ler payload do webhook
-     */
     const webhookData: AsaasWebhookEvent = await req.json()
 
-    /**
-     * Extrair dados do webhook (formato pode variar)
-     * O Asaas pode enviar payment dentro de um objeto ou diretamente no root
-     */
     const paymentId = webhookData.payment?.id || webhookData.id
     const paymentStatus = webhookData.payment?.status || webhookData.status
     const paymentDate =
@@ -65,72 +69,59 @@ serve(async (req) => {
       webhookData.paymentDate ||
       new Date().toISOString()
 
-    /**
-     * Validar dados mínimos necessários
-     */
     if (!paymentId || !paymentStatus) {
-      return new Response(
-        JSON.stringify({ error: 'Webhook inválido: dados incompletos' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse({ error: 'Webhook inválido: dados incompletos' }, 400)
     }
 
-    /**
-     * Processar apenas pagamentos confirmados
-     */
-    if (paymentStatus !== 'CONFIRMED' && paymentStatus !== 'RECEIVED') {
-      return new Response(
-        JSON.stringify({ message: 'Evento ignorado' }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      )
+    console.log('[asaas-webhook] recebido:', {
+      event: webhookData.event,
+      paymentId,
+      paymentStatus,
+    })
+
+    // ✅ Status válidos para confirmar pagamento PIX
+    const validStatuses = ['RECEIVED', 'CONFIRMED', 'CREDITED']
+
+    if (!validStatuses.includes(paymentStatus)) {
+      return jsonResponse({ message: 'Evento ignorado' }, 200)
     }
 
-    /**
-     * Criar cliente Supabase com Service Role
-     * Necessário para atualizar registros ignorando RLS
-     */
+    // Supabase Admin
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const serviceRoleKey =
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
+      Deno.env.get('SERVICE_ROLE_KEY') ||
+      ''
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(
-        JSON.stringify({ error: 'Configuração do Supabase inválida' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse({ error: 'Configuração do Supabase inválida' }, 500)
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-    /**
-     * Buscar pagamento pelo external_id (ID do Asaas)
-     */
-    const { data: payment } = await supabase
+    const { data: payment, error: payFindErr } = await supabase
       .from('payments')
       .select('id, participation_id, status')
       .eq('external_id', paymentId)
       .maybeSingle()
 
+    if (payFindErr) {
+      console.error('[asaas-webhook] erro find payment:', payFindErr)
+      return jsonResponse({ error: 'Falha ao buscar pagamento' }, 500)
+    }
+
     if (!payment) {
-      return new Response(
-        JSON.stringify({ message: 'Pagamento não encontrado' }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      )
+      console.log('[asaas-webhook] pagamento não encontrado:', paymentId)
+      return jsonResponse({ message: 'Pagamento não encontrado' }, 200)
     }
 
-    /**
-     * Garantir idempotência
-     */
+    // 🔁 Idempotência
     if (payment.status === 'paid') {
-      return new Response(
-        JSON.stringify({ message: 'Pagamento já processado' }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse({ message: 'Pagamento já processado' }, 200)
     }
 
-    /**
-     * Atualizar pagamento e ativar participação
-     */
-    await Promise.all([
+    // Atualiza pagamento + participação
+    const [payRes, partRes] = await Promise.all([
       supabase
         .from('payments')
         .update({ status: 'paid', paid_at: paymentDate })
@@ -142,15 +133,17 @@ serve(async (req) => {
         .eq('id', payment.participation_id),
     ])
 
-    return new Response(
-      JSON.stringify({ message: 'Pagamento confirmado e participação ativada' }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    )
+    if (payRes.error || partRes.error) {
+      console.error('[asaas-webhook] erro update:', {
+        pay: payRes.error,
+        part: partRes.error,
+      })
+      return jsonResponse({ error: 'Erro ao atualizar registros' }, 500)
+    }
+
+    return jsonResponse({ message: 'Pagamento confirmado com sucesso' }, 200)
   } catch (error) {
-    console.error('[asaas-webhook] Erro inesperado:', error)
-    return new Response(
-      JSON.stringify({ error: 'Erro interno do servidor' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    )
+    console.error('[asaas-webhook] erro inesperado:', error)
+    return jsonResponse({ error: 'Erro interno do servidor' }, 500)
   }
 })

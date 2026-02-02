@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [cpf, setCpf] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,6 +43,26 @@ export default function LoginPage() {
     const cleanPhone = phoneNumber.replace(/\D/g, '')
     // Aceita telefone com DDD (10 ou 11 dígitos)
     return cleanPhone.length >= 10 && cleanPhone.length <= 11
+  }
+
+  // Função para normalizar CPF (remover . e -)
+  const normalizeCpf = (cpfValue: string): string => {
+    return cpfValue.replace(/\D/g, '')
+  }
+
+  // Função para validar formato básico de CPF (11 dígitos)
+  const validateCpf = (cpfValue: string): boolean => {
+    const cleanCpf = normalizeCpf(cpfValue)
+    return cleanCpf.length === 11
+  }
+
+  // Função para formatar CPF (000.000.000-00)
+  const formatCpf = (cpfValue: string): string => {
+    const cleanCpf = normalizeCpf(cpfValue)
+    if (cleanCpf.length <= 3) return cleanCpf
+    if (cleanCpf.length <= 6) return `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3)}`
+    if (cleanCpf.length <= 9) return `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6)}`
+    return `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9, 11)}`
   }
 
 
@@ -156,6 +177,13 @@ export default function LoginPage() {
       return
     }
 
+    // Validar CPF (obrigatório no cadastro)
+    if (!validateCpf(cpf)) {
+      setError('Por favor, informe um CPF válido (11 dígitos)')
+      setLoading(false)
+      return
+    }
+
     try {
       // MODIFIQUEI AQUI - Limpar telefone para formato padrão (apenas números) antes de enviar
       const cleanPhone = phone.replace(/\D/g, '')
@@ -165,6 +193,17 @@ export default function LoginPage() {
       
       // MODIFIQUEI AQUI - Criar conta sem confirmação de e-mail
       // O trigger handle_new_user() criará o perfil automaticamente com os dados do metadata
+      const normalizedCpf = normalizeCpf(cpf)
+      
+      // Debug: verificar se CPF está sendo enviado
+      console.log('[LoginPage] Criando usuário com metadata:', {
+        name: name.trim(),
+        phone: cleanPhone,
+        email: email.trim(),
+        cpf: normalizedCpf,
+        cpfLength: normalizedCpf.length,
+      })
+      
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: signUpEmail,
         password,
@@ -173,6 +212,7 @@ export default function LoginPage() {
             name: name.trim(), // MODIFIQUEI AQUI - Nome será usado pelo trigger para criar o perfil
             phone: cleanPhone, // MODIFIQUEI AQUI - Telefone limpo (sem formatação) será usado pelo trigger
             email: email.trim(), // MODIFIQUEI AQUI - E-mail obrigatório será usado pelo trigger
+            cpf: normalizedCpf, // CPF normalizado (somente números)
           },
           // MODIFIQUEI AQUI - Desabilitar confirmação de e-mail
           emailRedirectTo: undefined,
@@ -205,6 +245,7 @@ export default function LoginPage() {
         setPhone('') // MODIFIQUEI AQUI - Limpar telefone após cadastro
         setEmail('') // MODIFIQUEI AQUI - Limpar e-mail após cadastro
         setName('') // MODIFIQUEI AQUI - Limpar nome após cadastro
+        setCpf('') // Limpar CPF após cadastro
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado ao criar conta')
@@ -331,6 +372,33 @@ export default function LoginPage() {
                     />
                   </div>
                 )}
+                {isSignUp && (
+                  <div>
+                    <label htmlFor="cpf" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
+                      CPF <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="cpf"
+                      name="cpf"
+                      type="text"
+                      autoComplete="off"
+                      required
+                      value={cpf}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '')
+                        if (value.length <= 11) {
+                          setCpf(formatCpf(value))
+                        }
+                      }}
+                      className="mt-2 block w-full rounded-xl border border-[#E5E5E5] bg-white px-4 py-3 text-sm text-[#1F1F1F] placeholder-[#1F1F1F]/40 shadow-sm focus:border-[#1E7F43] focus:outline-none focus:ring-2 focus:ring-[#3CCB7F]/40"
+                      placeholder="000.000.000-00"
+                      maxLength={14}
+                    />
+                    <p className="mt-1 text-xs text-[#1F1F1F]/50">
+                      Informe seu CPF (somente números)
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label htmlFor="password" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
                     Senha <span className="text-red-500">*</span>
@@ -425,6 +493,7 @@ export default function LoginPage() {
                   if (isSignUp) {
                     setEmail('') // MODIFIQUEI AQUI - Limpar e-mail apenas ao sair do cadastro
                     setName('') // MODIFIQUEI AQUI - Limpar nome apenas ao sair do cadastro
+                    setCpf('') // Limpar CPF ao sair do cadastro
                   }
                   navigate(newSignUp ? '/login?signup=true' : '/login', { replace: true })
                 }}

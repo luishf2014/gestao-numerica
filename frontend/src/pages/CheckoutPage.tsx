@@ -8,7 +8,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { createParticipation } from '../services/participationsService'
-import { createPixPaymentRecord } from '../services/paymentsService'
 import { createPixPayment } from '../services/asaasService'
 import { getDiscountByCode, calculateDiscountedPrice, incrementDiscountUses } from '../services/discountsService'
 import { Contest, Participation, Discount } from '../types'
@@ -87,25 +86,12 @@ export default function CheckoutPage() {
   }, [location.state, id, navigate])
 
   useEffect(() => {
-    let cancelled = false // MODIFIQUEI AQUI - Flag para cancelar se o componente desmontar
+    let cancelled = false
 
     async function loadData() {
-      // MODIFIQUEI AQUI - Múltiplas verificações para evitar criação duplicada
-      if (!id || !user || participationCreatedRef.current || isCreatingRef.current || selectedNumbers.length === 0) {
-        console.log('[CheckoutPage] loadData cancelado:', {
-          hasId: !!id,
-          hasUser: !!user,
-          alreadyCreated: participationCreatedRef.current,
-          isCreating: isCreatingRef.current,
-          hasNumbers: selectedNumbers.length > 0
-        })
+      if (!id || !user || selectedNumbers.length === 0) {
         return
       }
-
-      // MODIFIQUEI AQUI - Marcar como criando ANTES de qualquer operação assíncrona
-      console.log('[CheckoutPage] Iniciando criação de participação...')
-      isCreatingRef.current = true
-      participationCreatedRef.current = true
 
       try {
         setLoading(true)
@@ -125,7 +111,7 @@ export default function CheckoutPage() {
           return
         }
 
-        // MODIFIQUEI AQUI - Validar se os números estão dentro do intervalo do concurso
+        // Validar se os números estão dentro do intervalo do concurso
         const invalidNumbers = selectedNumbers.filter(n => 
           n < contestData.min_number || n > contestData.max_number
         )
@@ -137,26 +123,14 @@ export default function CheckoutPage() {
         }
 
         setContest(contestData)
-
-        // MODIFIQUEI AQUI - Criar participação automaticamente ao entrar no checkout (apenas uma vez)
-        const participationData = await createParticipation({
-          contestId: id,
-          numbers: selectedNumbers, // MODIFIQUEI AQUI - Usar números já validados do estado
-        })
-
-        if (cancelled) return
-
-        setParticipation(participationData)
+        // NÃO criar participação aqui - será criada apenas quando o usuário clicar em "Pagar"
       } catch (err) {
         if (cancelled) return
         console.error('Erro ao carregar dados:', err)
-        participationCreatedRef.current = false // MODIFIQUEI AQUI - Resetar flag em caso de erro
-        isCreatingRef.current = false
-        setError(err instanceof Error ? err.message : 'Erro ao processar participação')
+        setError(err instanceof Error ? err.message : 'Erro ao carregar concurso')
       } finally {
         if (!cancelled) {
           setLoading(false)
-          isCreatingRef.current = false
         }
       }
     }
@@ -165,7 +139,6 @@ export default function CheckoutPage() {
       loadData()
     }
 
-    // MODIFIQUEI AQUI - Cleanup function para cancelar operações pendentes
     return () => {
       cancelled = true
     }
@@ -177,14 +150,31 @@ export default function CheckoutPage() {
   }
 
   const handleCashPayment = async () => {
-    if (!participation || !contest) return
+    if (!contest || !profile || selectedNumbers.length === 0) return
+
+    // Evitar múltiplas chamadas simultâneas
+    if (processing || participationCreatedRef.current) return
 
     try {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Incrementar uso do desconto se aplicado (mesmo em pagamento em dinheiro)
-      // O admin registrará o pagamento com o valor correto depois
+      // Criar participação antes de processar pagamento em dinheiro
+      let participationData = participation
+      
+      if (!participationData) {
+        console.log('[CheckoutPage] Criando participação para pagamento em dinheiro...')
+        participationCreatedRef.current = true
+        
+        participationData = await createParticipation({
+          contestId: contest.id,
+          numbers: selectedNumbers,
+        })
+        
+        setParticipation(participationData)
+      }
+
+      // Incrementar uso do desconto se aplicado
       if (appliedDiscount) {
         try {
           await incrementDiscountUses(appliedDiscount.id)
@@ -194,13 +184,19 @@ export default function CheckoutPage() {
         }
       }
 
-      // MODIFIQUEI AQUI - Pagamento em dinheiro não cria pagamento automaticamente
+      // Pagamento em dinheiro não cria pagamento automaticamente
       // Apenas confirma que a participação foi criada e ficará pendente até o admin ativar
       // O admin deve registrar o pagamento com o valor final (com desconto aplicado)
       setSuccess(true)
     } catch (err) {
       console.error('Erro ao processar pagamento em dinheiro:', err)
       setError(err instanceof Error ? err.message : 'Erro ao processar participação')
+      
+      // Se falhou após criar participação, resetar flag
+      if (participationCreatedRef.current) {
+        participationCreatedRef.current = false
+        setParticipation(null)
+      }
     } finally {
       setProcessing(false)
     }
@@ -296,42 +292,61 @@ export default function CheckoutPage() {
   }
 
   const handlePixPayment = async () => {
-    if (!participation || !contest || !profile) return
+    if (!contest || !profile || selectedNumbers.length === 0) return
+
+    // Evitar múltiplas chamadas simultâneas
+    if (processing || participationCreatedRef.current) return
 
     try {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Calcular valor final com desconto aplicado
+      // 1. Criar participação ANTES de gerar o pagamento
+      // Isso garante que só criamos se o usuário realmente tentar pagar
+      let participationData = participation
+      
+      if (!participationData) {
+        console.log('[CheckoutPage] Criando participação antes do pagamento...')
+        participationCreatedRef.current = true
+        
+        participationData = await createParticipation({
+          contestId: contest.id,
+          numbers: selectedNumbers,
+        })
+        
+        setParticipation(participationData)
+      }
+
+      // 2. Validar CPF antes de permitir pagamento Pix
+      if (!profile?.cpf || profile.cpf.length !== 11) {
+        setError('Para pagar via Pix, é necessário completar seu cadastro com CPF.')
+        setProcessing(false)
+        return
+      }
+
+      // 3. Calcular valor final com desconto aplicado
       const finalAmount = getFinalAmount()
 
-      // MODIFIQUEI AQUI - Criar pagamento Pix e gerar QR Code com valor com desconto
+      // 4. Criar pagamento Pix e gerar QR Code
       const pixData = await createPixPayment({
-        participationId: participation.id,
-        ticketCode: participation.ticket_code || '',
+        participationId: participationData.id,
+        ticketCode: participationData.ticket_code || '',
         amount: finalAmount,
-        description: `Participação no concurso ${contest.name} - Ticket: ${participation.ticket_code}${appliedDiscount ? ` - Desconto: ${appliedDiscount.code}` : ''}`,
+        description: `Participação no concurso ${contest.name} - Ticket: ${participationData.ticket_code}${appliedDiscount ? ` - Desconto: ${appliedDiscount.code}` : ''}`,
         customerName: profile.name || 'Cliente',
         customerEmail: profile.email || undefined,
         customerPhone: profile.phone || undefined,
+        customerCpfCnpj: profile.cpf, // CPF normalizado (somente números)
       })
 
+      // 5. Se chegou aqui, tudo deu certo - exibir QR Code
       setPixQrCode(pixData.qrCode.encodedImage)
       setPixPayload(pixData.qrCode.payload)
       setPixExpirationDate(pixData.qrCode.expirationDate)
 
-      // MODIFIQUEI AQUI - Salvar registro do pagamento Pix no banco com valor final
-      await createPixPaymentRecord({
-        participationId: participation.id,
-        amount: finalAmount,
-        externalId: pixData.id,
-        qrCodeData: {
-          payload: pixData.qrCode.payload,
-          expirationDate: pixData.qrCode.expirationDate,
-        },
-      })
+      // O pagamento já foi salvo no banco pela função asaas-create-pix
 
-      // MODIFIQUEI AQUI - Incrementar uso do desconto se aplicado
+      // 6. Incrementar uso do desconto se aplicado
       if (appliedDiscount) {
         try {
           await incrementDiscountUses(appliedDiscount.id)
@@ -345,6 +360,12 @@ export default function CheckoutPage() {
     } catch (err) {
       console.error('Erro ao processar pagamento Pix:', err)
       setError(err instanceof Error ? err.message : 'Erro ao gerar QR Code Pix')
+      
+      // Se falhou após criar participação, resetar flag para permitir nova tentativa
+      if (participationCreatedRef.current) {
+        participationCreatedRef.current = false
+        setParticipation(null)
+      }
     } finally {
       setProcessing(false)
     }
@@ -420,7 +441,7 @@ export default function CheckoutPage() {
     )
   }
 
-  if (!user || !contest || !participation) {
+  if (!user || !contest || loading) {
     return (
       <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
         <Header />
@@ -428,7 +449,7 @@ export default function CheckoutPage() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#1E7F43] mx-auto mb-4"></div>
             <p className="text-[#1F1F1F]/70">
-              {!user ? 'Verificando autenticação...' : !contest ? 'Carregando concurso...' : 'Criando participação...'}
+              {!user ? 'Verificando autenticação...' : !contest ? 'Carregando concurso...' : 'Carregando...'}
             </p>
           </div>
         </div>
@@ -515,7 +536,7 @@ export default function CheckoutPage() {
             </div>
 
             {/* Código do Ticket */}
-            {participation.ticket_code && (
+            {participation?.ticket_code && (
               <div>
                 <span className="text-sm text-[#1F1F1F]/60">Código do Ticket:</span>
                 <p className="font-mono font-semibold text-[#1F1F1F] text-lg">
@@ -525,12 +546,14 @@ export default function CheckoutPage() {
             )}
 
             {/* Data e Hora */}
-            <div>
-              <span className="text-sm text-[#1F1F1F]/60">Data e Hora:</span>
-              <p className="font-semibold text-[#1F1F1F]">
-                {formatDateTime(participation.created_at)}
-              </p>
-            </div>
+            {participation?.created_at && (
+              <div>
+                <span className="text-sm text-[#1F1F1F]/60">Data e Hora:</span>
+                <p className="font-semibold text-[#1F1F1F]">
+                  {formatDateTime(participation.created_at)}
+                </p>
+              </div>
+            )}
 
             {/* MODIFIQUEI AQUI - Seção de Desconto */}
             {!success && (
@@ -716,7 +739,7 @@ export default function CheckoutPage() {
                   <strong>Código do Ticket:</strong>
                 </p>
                 <p className="font-mono font-bold text-lg text-blue-900 mb-3">
-                  {participation.ticket_code}
+                  {participation?.ticket_code || 'N/A'}
                 </p>
                 <p className="text-blue-700 text-sm">
                   Sua participação está <strong>pendente</strong>. Um administrador registrará o pagamento em dinheiro e ativará sua participação.

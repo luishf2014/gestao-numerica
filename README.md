@@ -146,6 +146,12 @@ O frontend estará disponível em `http://localhost:3000`
   - Adiciona campo `contest_code` na tabela `contests`
   - Permite identificação pública dos concursos por código único
 
+- **`020_add_cpf_to_profiles.sql`** - Campo CPF obrigatório para pagamentos Pix ✅ **IMPLEMENTADO**
+  - Adiciona coluna `cpf` na tabela `profiles` (TEXT, único quando preenchido)
+  - Recria trigger `handle_new_user` para incluir CPF do metadata
+  - **Obrigatório:** Execute esta migração para habilitar pagamentos Pix
+  - CPF é obrigatório no cadastro e necessário para criar cobranças no Asaas
+
 ---
 
 ## 📁 Estrutura do Projeto
@@ -188,6 +194,12 @@ gestao-numerica/
 
   * Nome
   * Celular
+  * E-mail
+  * **CPF (obrigatório para pagamentos Pix)** ✅ **IMPLEMENTADO**
+    * Validação básica (11 dígitos)
+    * Normalização automática (remove . e -)
+    * Formatação automática durante digitação
+    * Armazenado somente como números no banco
   * Seleção de números
 * Escolha de números:
 
@@ -578,6 +590,12 @@ Os percentuais podem ser configurados ao criar ou editar um concurso:
   * `asaas-create-pix`: Cria pagamentos PIX no Asaas de forma segura
   * `asaas-webhook`: Recebe e processa confirmações de pagamento automaticamente
   * **ASAAS_API_KEY nunca exposta no frontend** - armazenada apenas nos secrets do Supabase
+* **Campo CPF obrigatório para pagamentos Pix** ✅ **IMPLEMENTADO**
+  * CPF obrigatório no cadastro de usuário
+  * Validação antes de permitir pagamento Pix
+  * CPF enviado automaticamente para o Asaas (normalizado, somente números)
+  * CPF exibido mascarado no perfil (não editável após cadastro)
+  * Migração SQL: `020_add_cpf_to_profiles.sql`
 * **Geração de QR Code Pix dinâmico** ✅ **IMPLEMENTADO**
   * QR Code gerado automaticamente ao criar pagamento
   * Código Pix copia e cola disponível
@@ -616,8 +634,9 @@ Os percentuais podem ser configurados ao criar ou editar um concurso:
 * **Localização**: `supabase/functions/asaas-create-pix/index.ts`
 * **Função**: Criar pagamento PIX no Asaas e retornar QR Code
 * **Secrets necessários**: `ASAAS_API_KEY`, `ASAAS_BASE_URL` (opcional), `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-* **Validações**: Autenticação do usuário, ownership da participação, amount > 0
+* **Validações**: Autenticação do usuário, ownership da participação, amount > 0, **CPF obrigatório (11 dígitos)** ✅ **IMPLEMENTADO**
 * **Retorno**: `{ id, status, dueDate, qrCode: { encodedImage, payload, expirationDate } }`
+* **CPF**: Enviado automaticamente do perfil do usuário para o Asaas (normalizado, somente números)
 
 #### `asaas-webhook`
 * **Localização**: `supabase/functions/asaas-webhook/index.ts`
@@ -641,22 +660,32 @@ Os percentuais podem ser configurados ao criar ou editar um concurso:
 1. Usuário seleciona números e vai para checkout
 2. **Sistema gera código/ticket único** (ex: TK-A1B2C3) automaticamente ao criar participação
 3. Usuário pode aplicar código de desconto (se disponível)
-4. **Frontend chama `createPixPayment()`** → invoca Edge Function `asaas-create-pix`
-5. **Edge Function cria pagamento no Asaas** usando `ASAAS_API_KEY` dos secrets (seguro)
-6. **Edge Function retorna QR Code** (encodedImage, payload, expirationDate)
-7. **Frontend exibe QR Code** e grava payment no banco (`status='pending'`, `external_id`)
-8. Usuário realiza pagamento via Pix
-9. **Asaas envia webhook** → Edge Function `asaas-webhook`
-10. **Edge Function valida token** e processa confirmação
-11. **Sistema atualiza automaticamente**:
+4. **Validação de CPF** ✅ **IMPLEMENTADO**
+   - Sistema verifica se CPF está cadastrado no perfil
+   - Se não houver CPF, bloqueia pagamento Pix com mensagem clara
+   - CPF deve ter 11 dígitos (normalizado, somente números)
+5. **Frontend chama `createPixPayment()`** → invoca Edge Function `asaas-create-pix`
+6. **Edge Function valida CPF** (obrigatório, 11 dígitos) antes de criar pagamento
+7. **Edge Function cria pagamento no Asaas** usando `ASAAS_API_KEY` dos secrets (seguro)
+   - CPF do usuário enviado automaticamente para o Asaas (`customerCpfCnpj`)
+8. **Edge Function retorna QR Code** (encodedImage, payload, expirationDate)
+9. **Frontend exibe QR Code** e grava payment no banco (`status='pending'`, `external_id`)
+10. Usuário realiza pagamento via Pix
+11. **Asaas envia webhook** → Edge Function `asaas-webhook`
+12. **Edge Function valida token** e processa confirmação
+13. **Sistema atualiza automaticamente**:
     - Payment: `status='paid'`, `paid_at` preenchido
     - Participation: `status='active'` (ativação automática)
-12. Usuário vê participação ativada em "Meus Tickets"
+14. Usuário vê participação ativada em "Meus Tickets"
 
 **Características:**
 - ✅ Geração de QR Code Pix funcional via Edge Function
 - ✅ Código Pix copia e cola disponível
 - ✅ Sistema de descontos integrado no checkout
+- ✅ **Validação de CPF obrigatória** ✅ **IMPLEMENTADO**
+  - CPF obrigatório no cadastro
+  - Validação antes de permitir pagamento Pix
+  - CPF enviado automaticamente para o Asaas
 - ✅ **Ativação automática via webhook** ✅ **IMPLEMENTADO**
 - ✅ **ASAAS_API_KEY nunca exposta no frontend** ✅ **IMPLEMENTADO**
 - ✅ Processamento idempotente (não duplica processamento)
@@ -751,9 +780,9 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 | **FASE 2** - Participações e Ranking | ✅ Completa | 100% | Ranking completo com prêmios automáticos, exibição por ticket individual |
 | **FASE 3** - Pagamentos Pix | ✅ Completa | 100% | Checkout com descontos, Edge Functions seguras, webhook e ativação automática implementados |
 | **FASE 4** - Sorteios e Rateio | ✅ Completa | 100% | Gestão de sorteios, rateio automático, reprocessamento automático, prêmios por participação, visualização no ranking |
-| **FASE 5** - Finalização | ⏳ Aguardando | 0% | Aguarda fases anteriores |
+| **FASE 5** - Finalização | 🟡 Em andamento | 50% | Testes finais e deploy em produção |
 
-**MODIFIQUEI AQUI** - Progresso calculado: (100% + 100% + 100% + 100% + 0%) / 5 = 80% por fase, mas considerando peso das fases implementadas = **90% geral**
+**MODIFIQUEI AQUI** - Progresso calculado: (100% + 100% + 100% + 100% + 50%) / 5 = **90% geral**
 
 ---
 
@@ -768,6 +797,12 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 #### **Autenticação e Segurança**
 - [x] Sistema de login/cadastro completo
+- [x] **Campo CPF obrigatório no cadastro** ✅ **IMPLEMENTADO**
+  - [x] Validação básica (11 dígitos)
+  - [x] Normalização automática (remove . e -)
+  - [x] Formatação automática durante digitação (000.000.000-00)
+  - [x] CPF armazenado somente como números no banco
+  - [x] Migração SQL: `020_add_cpf_to_profiles.sql`
 - [x] Contexto de autenticação (AuthContext)
 - [x] Verificação de permissões admin (isAdmin)
 - [x] Proteção de rotas administrativas (RequireAdmin)
@@ -887,6 +922,10 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - [x] Redirecionamento para checkout após seleção
 - [x] Página de configurações (/settings) ✅ **IMPLEMENTADO**
   - [x] 👤 Meu Perfil (editar nome, telefone, e-mail)
+  - [x] **Exibição de CPF mascarado** ✅ **IMPLEMENTADO**
+    - [x] CPF exibido como informativo (não editável após cadastro)
+    - [x] Formato mascarado: 123.***.***-09
+    - [x] Mensagem informativa sobre não poder alterar CPF
   - [x] Alterar senha (com validações)
   - [x] 🔔 Preferências (notificações, canais de comunicação)
   - [x] 🔐 Segurança (último acesso, encerrar sessões)
@@ -1019,6 +1058,10 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [x] Página de Checkout (`/contests/:id/checkout`) ✅ **IMPLEMENTADO**
   - [x] Exibição de informações da participação (números, ticket code, data/hora, valor)
   - [x] Seleção de método de pagamento (Pix ou Dinheiro)
+  - [x] **Validação de CPF antes de pagamento Pix** ✅ **IMPLEMENTADO**
+    - [x] Verificação obrigatória de CPF cadastrado
+    - [x] Bloqueio de pagamento Pix se CPF não estiver cadastrado
+    - [x] Mensagem clara: "Para pagar via Pix, é necessário completar seu cadastro com CPF."
   - [x] **Sistema de descontos no checkout** ✅ **IMPLEMENTADO**
     - [x] Campo para inserir código de desconto
     - [x] Validação de código (ativo, válido, dentro do prazo, limite de usos)
@@ -1236,9 +1279,18 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - [ ] Sistema de notificações (WhatsApp, E-mail, SMS)
 - [x] Painel financeiro básico ✅ **Implementado**
 - [x] Gestão de descontos e promoções ✅ **IMPLEMENTADO**
-- [ ] Ajustes finais de UX/UI
-- [ ] Testes finais completos
-- [ ] Documentação final
+- [x] **Integração completa de CPF** ✅ **IMPLEMENTADO**
+  - [x] Campo CPF obrigatório no cadastro
+  - [x] Validação e normalização no frontend
+  - [x] Exibição mascarada no perfil
+  - [x] Validação antes de pagamento Pix
+  - [x] Envio automático para o Asaas
+- [x] Ajustes finais de UX/UI ✅ **Parcialmente implementado**
+  - [x] Sistema de modais de erro com ícones
+  - [x] Favicon e título atualizados
+  - [x] Melhorias visuais em várias páginas
+- [ ] Testes finais completos ⏳ **Em andamento**
+- [x] Documentação final ✅ **Em andamento** (README atualizado)
 - [ ] Deploy em produção
 
 ---
@@ -1289,21 +1341,36 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 
 **📊 Progresso Geral: 90% de 100% finalizado**
 
-**MODIFIQUEI AQUI** - Progresso atualizado após implementação completa de Edge Functions para integração segura com Asaas:
+**Breakdown por Fase:**
+- ✅ **FASE 1:** 100% completa
+- ✅ **FASE 2:** 100% completa
+- ✅ **FASE 3:** 100% completa (incluindo integração completa de CPF)
+- ✅ **FASE 4:** 100% completa
+- 🟡 **FASE 5:** 50% completa (testes finais e deploy pendentes)
+
+Progresso atualizado após implementação completa de Edge Functions e integração de CPF:
 
 * 🟢 **Em desenvolvimento ativo**
 * ✅ **FASE 1:** 100% completa ✅ (incluindo melhorias de UX/UI e página de configurações)
 * ✅ **FASE 2:** 100% completa ✅ (ranking completo com prêmios automáticos por categoria, sistema de medalhas baseado em categorias, filtros de categoria no ranking detalhado)
-* ✅ **FASE 3:** 100% completa ✅ (checkout com descontos, Edge Functions seguras, webhook e ativação automática implementados)
+* ✅ **FASE 3:** 100% completa ✅ (checkout com descontos, Edge Functions seguras, webhook e ativação automática, integração completa de CPF)
 * ✅ **FASE 4:** 100% completa ✅ (gestão de sorteios, rateio automático, prêmios por participação, visualização no ranking)
+* 🟡 **FASE 5:** 50% completa ✅ (painel financeiro, descontos, CPF integrado, ajustes UX/UI, documentação em andamento - faltam testes finais e deploy)
 * 📦 Arquitetura definida e estável
 * ⚙️ Escalável e modular
 * 🔒 Segurança implementada (RLS completo)
 * 🎨 **UX/UI aprimorada** com modais visuais e ícones
 * ✅ **Finalização automática de concursos** implementada com trigger SQL
+* ✅ **Integração completa de CPF** para pagamentos Pix
 
 **🎯 Foco Atual:**
-- Testes completos do fluxo de participação, pagamento e ranking em produção
+- ✅ **Integração completa de CPF** ✅ **IMPLEMENTADO**
+  - ✅ Campo CPF obrigatório no cadastro
+  - ✅ Validação e normalização no frontend
+  - ✅ Exibição mascarada no perfil
+  - ✅ Validação antes de pagamento Pix
+  - ✅ Envio automático para o Asaas
+- Testes finais do fluxo completo de participação, pagamento e ranking em produção
 - Monitoramento e otimização das Edge Functions
 - Validação de performance e escalabilidade
 
@@ -1350,6 +1417,10 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
   - ✅ Validação e aplicação automática de códigos de desconto
   - ✅ Exibição de valor original, desconto e valor final
   - ✅ Exibição de código do concurso (`contest_code`)
+  - ✅ **Validação de CPF obrigatória para pagamento Pix** ✅ **IMPLEMENTADO**
+    - ✅ Verificação de CPF cadastrado antes de permitir pagamento
+    - ✅ Mensagem clara se CPF não estiver cadastrado
+    - ✅ CPF enviado automaticamente para o Asaas
 - ✅ **Integração Segura com API Asaas via Edge Functions** ✅ **IMPLEMENTADO**
   - ✅ Edge Function `asaas-create-pix` para criar pagamentos PIX
   - ✅ Edge Function `asaas-webhook` para processar confirmações
@@ -1372,6 +1443,9 @@ Toda e qualquer responsabilidade legal, fiscal, regulatória ou comercial relaci
 - ✅ **Exibição completa de números acertados** na página de rankings gerais
 - ✅ **Página de Configurações (`/settings`)** completa com:
   - 👤 Meu Perfil (nome, telefone, e-mail, alterar senha)
+  - ✅ **Exibição de CPF mascarado** ✅ **IMPLEMENTADO**
+    - ✅ CPF exibido como informativo (não editável após cadastro)
+    - ✅ Formato mascarado: 123.***.***-09
   - 🔔 Preferências (notificações, canais de comunicação)
   - 🔐 Segurança (último acesso, encerrar sessões)
   - 🎨 Aparência (tema claro/escuro, nome da plataforma)

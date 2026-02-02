@@ -1,17 +1,9 @@
-/**
- * Serviço de integração com API Asaas
- * FASE 3: Pagamentos e Ativação
- * 
- * MODIFIQUEI AQUI - Funções para gerar QR Code Pix via Edge Functions do Supabase
- * A lógica de criação de pagamento foi movida para Edge Function por segurança
- */
-
 import { supabase } from '../lib/supabase'
 
 export interface AsaasPixQRCodeResponse {
-  encodedImage: string // Base64 da imagem do QR Code
-  payload: string // Código Pix copia e cola
-  expirationDate: string // Data de expiração do QR Code
+  encodedImage: string
+  payload: string
+  expirationDate: string
 }
 
 export interface CreatePixPaymentParams {
@@ -26,87 +18,143 @@ export interface CreatePixPaymentParams {
 }
 
 export interface CreatePixPaymentResponse {
-  id: string // ID do pagamento no Asaas
+  id: string
   qrCode: AsaasPixQRCodeResponse
   status: string
   dueDate: string
 }
 
 /**
- * Cria um pagamento Pix via Edge Function do Supabase
- * MODIFIQUEI AQUI - Função agora chama Edge Function ao invés de fazer fetch direto no Asaas
+ * Cria pagamento PIX e retorna QR Code
  * 
- * @param params Parâmetros do pagamento Pix
- * @returns Dados do pagamento incluindo QR Code
+ * Chama apenas a Edge Function asaas-create-pix que:
+ * - Valida autenticação e ownership
+ * - Cria pagamento no Asaas
+ * - Busca QR Code (com retry automático)
+ * - Salva no banco
+ * - Retorna resposta completa
+ * 
+ * @param params Parâmetros do pagamento PIX
+ * @returns Resposta com ID do pagamento e QR Code
  */
-export async function createPixPayment(params: CreatePixPaymentParams): Promise<CreatePixPaymentResponse> {
+export async function createPixPayment(
+  params: CreatePixPaymentParams
+): Promise<CreatePixPaymentResponse> {
+  // Verificar autenticação - getUser() valida o token no servidor
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Usuário não autenticado. Faça login novamente.')
+  }
+
+  // Obter sessão atualizada
+  let { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  // Se não tiver sessão válida, tentar refresh
+  if (sessionError || !sessionData?.session) {
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+    if (refreshError || !refreshData?.session) {
+      throw new Error('Sessão expirada. Faça login novamente.')
+    }
+    sessionData = refreshData
+  }
+
+  // Verificar se temos token válido
+  const accessToken = sessionData?.session?.access_token
+  if (!accessToken) {
+    throw new Error('Token de acesso não disponível. Faça login novamente.')
+  }
+
+  // MODIFIQUEI AQUI - Em vez de supabase.functions.invoke (que esconde o body do erro),
+  // chamar via fetch para:
+  // - forçar Authorization Bearer
+  // - capturar o JSON do 401/403/500 com { error, debug.step }
+  const supabaseUrl =
+    (import.meta as any).env?.VITE_SUPABASE_URL ||
+    (import.meta as any).env?.SUPABASE_URL
+
+  if (!supabaseUrl) {
+    throw new Error('VITE_SUPABASE_URL não configurado.')
+  }
+
+  const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/asaas-create-pix`
+
+  // MODIFIQUEI AQUI - log de contexto (ajuda a matar “misterios”)
+  console.log('[createPixPayment] chamando Edge Function:', {
+    url,
+    hasAccessToken: !!accessToken,
+    accessTokenPrefix: accessToken.substring(0, 12) + '...',
+  })
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // MODIFIQUEI AQUI - garante Bearer correto SEM depender do invoke
+      'Authorization': `Bearer ${accessToken}`,
+      // MODIFIQUEI AQUI - REMOVIDO apikey (isso estava causando Invalid JWT)
+      // ...(anonKey ? { apikey: anonKey } : {}),
+    },
+    body: JSON.stringify({
+      participationId: params.participationId,
+      ticketCode: params.ticketCode,
+      amount: params.amount,
+      description: params.description,
+      customerName: params.customerName,
+      customerEmail: params.customerEmail,
+      customerPhone: params.customerPhone,
+      customerCpfCnpj: params.customerCpfCnpj,
+    }),
+  })
+
+  const text = await res.text()
+  let data: any = null
   try {
-    // MODIFIQUEI AQUI - Chamar Edge Function do Supabase ao invés de API direta do Asaas
-    const { data, error } = await supabase.functions.invoke('asaas-create-pix', {
-      body: {
-        participationId: params.participationId,
-        ticketCode: params.ticketCode,
-        amount: params.amount,
-        description: params.description,
-        customerName: params.customerName,
-        customerEmail: params.customerEmail,
-        customerPhone: params.customerPhone,
-        customerCpfCnpj: params.customerCpfCnpj,
-      },
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = { raw: text }
+  }
+
+  if (!res.ok) {
+    // MODIFIQUEI AQUI - logs “não colapsáveis” (JSON stringify)
+    console.error('[createPixPayment] Edge Function status:', res.status)
+    console.error('[createPixPayment] Edge Function response JSON:', JSON.stringify(data, null, 2))
+    console.error('[createPixPayment] Edge Function details:', {
+      url,
+      statusText: res.statusText,
     })
 
-    if (error) {
-      throw new Error(error.message || 'Erro ao criar pagamento Pix')
+    // Se for erro 401, pode ser token expirado
+    if (res.status === 401) {
+      const msg =
+        data?.error ||
+        data?.message || // MODIFIQUEI AQUI - alguns gateways retornam message (ex: Invalid JWT)
+        'Token inválido ou expirado. Por favor, faça login novamente.'
+      const debugStep = data?.debug?.step ? ` (step: ${data.debug.step})` : ''
+      throw new Error(`${msg}${debugStep}`)
     }
 
-    if (!data) {
-      throw new Error('Resposta vazia da Edge Function')
-    }
-
-    // MODIFIQUEI AQUI - Verificar se há erro na resposta
-    if (data.error) {
-      throw new Error(data.error)
-    }
-
-    return {
-      id: data.id,
-      qrCode: {
-        encodedImage: data.qrCode?.encodedImage || '',
-        payload: data.qrCode?.payload || '',
-        expirationDate: data.qrCode?.expirationDate || data.dueDate,
-      },
-      status: data.status,
-      dueDate: data.dueDate,
-    }
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error
-    }
-    throw new Error('Erro desconhecido ao criar pagamento Pix')
+    const errorMessage =
+      data?.error ||
+      data?.message ||
+      `Erro ao criar pagamento PIX (status ${res.status})`
+    const debugStep = data?.debug?.step ? ` (step: ${data.debug.step})` : ''
+    throw new Error(`${errorMessage}${debugStep}`)
   }
-}
 
-/**
- * Verifica o status de um pagamento no Asaas
- * MODIFIQUEI AQUI - Função desabilitada por segurança (não deve usar ASAAS_API_KEY no frontend)
- * 
- * NOTA: Esta função não está sendo usada no fluxo atual. O status do pagamento é verificado
- * automaticamente via webhook do Asaas. Se necessário no futuro, criar uma Edge Function
- * equivalente que use ASAAS_API_KEY dos secrets do Supabase.
- * 
- * @param paymentId ID do pagamento no Asaas
- * @returns Status do pagamento
- * @deprecated Esta função não deve ser usada pois exporia ASAAS_API_KEY no frontend
- */
-export async function checkPaymentStatus(paymentId: string): Promise<{
-  status: string
-  paid: boolean
-  paidDate?: string
-}> {
-  // MODIFIQUEI AQUI - Função desabilitada por segurança
-  // Para verificar status, use a tabela payments do Supabase que é atualizada via webhook
-  throw new Error(
-    'checkPaymentStatus não está disponível por segurança. ' +
-    'Use a tabela payments do Supabase que é atualizada automaticamente via webhook.'
-  )
+  if (!data || !data.id || !data.qrCode) {
+    // MODIFIQUEI AQUI - log da resposta inesperada
+    console.error('[createPixPayment] Resposta inválida:', JSON.stringify(data, null, 2))
+    throw new Error('Resposta inválida do servidor')
+  }
+
+  return {
+    id: data.id,
+    status: data.status || 'PENDING',
+    dueDate: data.dueDate || '',
+    qrCode: {
+      encodedImage: data.qrCode.encodedImage,
+      payload: data.qrCode.payload,
+      expirationDate: data.qrCode.expirationDate || data.dueDate || '',
+    },
+  }
 }

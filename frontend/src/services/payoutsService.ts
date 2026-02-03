@@ -135,3 +135,91 @@ export async function getDrawPayoutSummary(drawId: string): Promise<{
     },
   }
 }
+
+/**
+ * Interface para ganhador recente com informações completas
+ */
+export interface RecentWinner {
+  id: string
+  draw_id: string
+  contest_id: string
+  participation_id: string
+  user_id: string
+  category: 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
+  score: number
+  amount_won: number
+  processed_at: string
+  // Campos relacionados (joins)
+  user_name?: string
+  user_phone?: string
+  contest_name?: string
+  draw_date?: string
+}
+
+/**
+ * Busca ganhadores recentes (categoria TOP com prêmio > 0)
+ * Usado para notificar admins no Dashboard
+ *
+ * @param limit Quantidade máxima de ganhadores a retornar (padrão: 10)
+ * @returns Lista de ganhadores recentes com informações do usuário e concurso
+ */
+export async function getRecentWinners(limit: number = 10): Promise<RecentWinner[]> {
+  // Buscar payouts TOP com valor > 0, ordenados por data de processamento
+  const { data: payouts, error } = await supabase
+    .from('draw_payouts')
+    .select(`
+      *,
+      draws:draw_id (draw_date, contest_id),
+      profiles:user_id (name, phone),
+      contests:contest_id (name)
+    `)
+    .eq('category', 'TOP')
+    .gt('amount_won', 0)
+    .order('processed_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('Erro ao buscar ganhadores recentes:', error)
+    throw new Error(`Erro ao buscar ganhadores: ${error.message}`)
+  }
+
+  // Mapear os dados para o formato esperado
+  return (payouts || []).map((p: any) => ({
+    id: p.id,
+    draw_id: p.draw_id,
+    contest_id: p.contest_id,
+    participation_id: p.participation_id,
+    user_id: p.user_id,
+    category: p.category,
+    score: p.score,
+    amount_won: p.amount_won,
+    processed_at: p.processed_at,
+    user_name: p.profiles?.name || 'Usuário',
+    user_phone: p.profiles?.phone || '',
+    contest_name: p.contests?.name || 'Concurso',
+    draw_date: p.draws?.draw_date || '',
+  }))
+}
+
+/**
+ * Conta o total de ganhadores TOP pendentes de revisão
+ * (processados nas últimas 24 horas)
+ */
+export async function countRecentWinners(): Promise<number> {
+  const oneDayAgo = new Date()
+  oneDayAgo.setDate(oneDayAgo.getDate() - 1)
+
+  const { count, error } = await supabase
+    .from('draw_payouts')
+    .select('*', { count: 'exact', head: true })
+    .eq('category', 'TOP')
+    .gt('amount_won', 0)
+    .gte('processed_at', oneDayAgo.toISOString())
+
+  if (error) {
+    console.error('Erro ao contar ganhadores:', error)
+    return 0
+  }
+
+  return count || 0
+}

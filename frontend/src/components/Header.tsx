@@ -10,6 +10,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useCart } from '../contexts/CartContext'
 import logodezaqui from '../assets/logodezaqui.png'
 
 // Constantes
@@ -17,11 +18,13 @@ const MENU_ANIMATION_DURATION = 200
 
 export default function Header() {
   const navigate = useNavigate()
-  const { user, isAdmin, logout, profile } = useAuth() // MODIFIQUEI AQUI - Adicionar profile ao destructuring
+  const { user, isAdmin, logout, profile } = useAuth()
+  const { getItemCount } = useCart()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [isFadingOut, setIsFadingOut] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const cartItemCount = getItemCount()
 
   // MODIFIQUEI AQUI - Formatar telefone para exibição
   const formatPhone = useCallback((phone: string | undefined | null): string => {
@@ -252,9 +255,25 @@ export default function Header() {
                 Dashboard
               </Link>
             )}
+
+            {/* Icone do Carrinho */}
+            <Link
+              to="/cart"
+              className="relative px-3 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+              title="Carrinho de Apostas"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              {cartItemCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-[#F4C430] text-[#1F1F1F] text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                  {cartItemCount > 9 ? '9+' : cartItemCount}
+                </span>
+              )}
+            </Link>
           </div>
 
-          {/* MODIFIQUEI AQUI - Mostrar botões de Login/Cadastro quando não autenticado */}
+          {/* Mostrar botoes de Login/Cadastro quando nao autenticado */}
           {!user ? (
             <div className="flex items-center gap-2">
               <Link

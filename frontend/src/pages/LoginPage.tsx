@@ -177,9 +177,9 @@ export default function LoginPage() {
       return
     }
 
-    // Validar CPF (obrigatório no cadastro)
-    if (!validateCpf(cpf)) {
-      setError('Por favor, informe um CPF válido (11 dígitos)')
+    // Validar CPF somente se fornecido (agora é opcional)
+    if (cpf.trim() && !validateCpf(cpf)) {
+      setError('CPF inválido. Informe 11 dígitos ou deixe em branco.')
       setLoading(false)
       return
     }
@@ -200,21 +200,27 @@ export default function LoginPage() {
         name: name.trim(),
         phone: cleanPhone,
         email: email.trim(),
-        cpf: normalizedCpf,
+        cpf: normalizedCpf || '(não informado)',
         cpfLength: normalizedCpf.length,
       })
-      
+
+      // Montar metadados (CPF é opcional)
+      const userMetadata: Record<string, string> = {
+        name: name.trim(),
+        phone: cleanPhone,
+        email: email.trim(),
+      }
+      // Só incluir CPF se foi informado
+      if (normalizedCpf) {
+        userMetadata.cpf = normalizedCpf
+      }
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: signUpEmail,
         password,
         options: {
-          data: {
-            name: name.trim(), // MODIFIQUEI AQUI - Nome será usado pelo trigger para criar o perfil
-            phone: cleanPhone, // MODIFIQUEI AQUI - Telefone limpo (sem formatação) será usado pelo trigger
-            email: email.trim(), // MODIFIQUEI AQUI - E-mail obrigatório será usado pelo trigger
-            cpf: normalizedCpf, // CPF normalizado (somente números)
-          },
-          // MODIFIQUEI AQUI - Desabilitar confirmação de e-mail
+          data: userMetadata,
+          // Desabilitar confirmação de e-mail
           emailRedirectTo: undefined,
         },
       })
@@ -375,14 +381,13 @@ export default function LoginPage() {
                 {isSignUp && (
                   <div>
                     <label htmlFor="cpf" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1F1F1F]/60">
-                      CPF <span className="text-red-500">*</span>
+                      CPF <span className="text-[#1F1F1F]/40">(opcional)</span>
                     </label>
                     <input
                       id="cpf"
                       name="cpf"
                       type="text"
                       autoComplete="off"
-                      required
                       value={cpf}
                       onChange={(e) => {
                         const value = e.target.value.replace(/\D/g, '')
@@ -395,7 +400,7 @@ export default function LoginPage() {
                       maxLength={14}
                     />
                     <p className="mt-1 text-xs text-[#1F1F1F]/50">
-                      Informe seu CPF (somente números)
+                      Necessário para pagamento via Pix
                     </p>
                   </div>
                 )}

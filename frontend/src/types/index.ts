@@ -75,6 +75,7 @@ export interface Draw {
   numbers: number[]
   draw_date: string
   code?: string // MODIFIQUEI AQUI - Código único do sorteio (ex: DRW-20250124-A1B2C3)
+  numbers_count?: number // MODIFIQUEI AQUI - Quantidade de números para este sorteio (se NULL, usa numbers_per_participation do concurso)
   created_at: string
 }
 

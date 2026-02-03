@@ -111,6 +111,7 @@ export interface CreateDrawInput {
   numbers: number[]
   draw_date: string
   code?: string // Opcional, será gerado automaticamente se não fornecido
+  numbers_count?: number // Quantidade de números para este sorteio específico
 }
 
 /**
@@ -147,6 +148,7 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
     numbers: input.numbers,
     draw_date: input.draw_date,
     code,
+    ...(input.numbers_count !== undefined && { numbers_count: input.numbers_count }),
   }
 
   let { data, error } = await supabase
@@ -240,6 +242,7 @@ export async function createDraw(input: CreateDrawInput): Promise<Draw> {
 export interface UpdateDrawInput {
   numbers?: number[]
   draw_date?: string
+  numbers_count?: number // Quantidade de números para este sorteio específico
 }
 
 /**

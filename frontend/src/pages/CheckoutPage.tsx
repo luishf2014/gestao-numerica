@@ -45,8 +45,27 @@ export default function CheckoutPage() {
   const [discountError, setDiscountError] = useState<string | null>(null)
 
   useEffect(() => {
-    // MODIFIQUEI AQUI - Verificar se há números selecionados
-    const state = location.state as LocationState
+    // MODIFIQUEI AQUI - Verificar se há números selecionados (location.state ou sessionStorage)
+    let state = location.state as LocationState
+
+    // Se não há números no location.state, tentar restaurar do sessionStorage
+    if (!state?.selectedNumbers || state.selectedNumbers.length === 0) {
+      try {
+        const savedData = sessionStorage.getItem('dezaqui_checkout')
+        if (savedData) {
+          const parsed = JSON.parse(savedData)
+          // Verificar se os dados são do mesmo concurso e não são muito antigos (1 hora)
+          const oneHourAgo = Date.now() - (60 * 60 * 1000)
+          if (parsed.contestId === id && parsed.timestamp > oneHourAgo && parsed.selectedNumbers?.length > 0) {
+            state = { selectedNumbers: parsed.selectedNumbers }
+            console.log('[CheckoutPage] Estado restaurado do sessionStorage:', parsed.selectedNumbers)
+          }
+        }
+      } catch (err) {
+        console.error('[CheckoutPage] Erro ao restaurar sessionStorage:', err)
+      }
+    }
+
     if (!state?.selectedNumbers || state.selectedNumbers.length === 0) {
       // Se não há números, redirecionar para página de seleção
       if (id) {
@@ -187,6 +206,10 @@ export default function CheckoutPage() {
       // Pagamento em dinheiro não cria pagamento automaticamente
       // Apenas confirma que a participação foi criada e ficará pendente até o admin ativar
       // O admin deve registrar o pagamento com o valor final (com desconto aplicado)
+
+      // Limpar sessionStorage após sucesso
+      sessionStorage.removeItem('dezaqui_checkout')
+
       setSuccess(true)
     } catch (err) {
       console.error('Erro ao processar pagamento em dinheiro:', err)
@@ -319,7 +342,7 @@ export default function CheckoutPage() {
 
       // 2. Validar CPF antes de permitir pagamento Pix
       if (!profile?.cpf || profile.cpf.length !== 11) {
-        setError('Para pagar via Pix, é necessário completar seu cadastro com CPF.')
+        setError('Para pagar via Pix, é necessário cadastrar seu CPF. Acesse "Minha Conta" nas configurações do seu perfil para adicionar o CPF, ou escolha pagamento em Dinheiro.')
         setProcessing(false)
         return
       }
@@ -332,7 +355,7 @@ export default function CheckoutPage() {
         participationId: participationData.id,
         ticketCode: participationData.ticket_code || '',
         amount: finalAmount,
-        description: `Participação no concurso ${contest.name} - Ticket: ${participationData.ticket_code}${appliedDiscount ? ` - Desconto: ${appliedDiscount.code}` : ''}`,
+        description: 'Pedido de Compra',
         customerName: profile.name || 'Cliente',
         customerEmail: profile.email || undefined,
         customerPhone: profile.phone || undefined,
@@ -355,6 +378,9 @@ export default function CheckoutPage() {
           // Não falhar o pagamento se houver erro ao incrementar desconto
         }
       }
+
+      // Limpar sessionStorage após sucesso
+      sessionStorage.removeItem('dezaqui_checkout')
 
       setSuccess(true)
     } catch (err) {

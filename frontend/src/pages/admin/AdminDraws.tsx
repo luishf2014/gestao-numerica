@@ -21,6 +21,7 @@ export default function AdminDraws() {
   
   // Estados para filtros
   const [filterContestId, setFilterContestId] = useState<string>('all')
+  const [filterOnlyOngoing, setFilterOnlyOngoing] = useState<boolean>(false)
   
   // Estados para modal de criar/editar sorteio
   const [showDrawModal, setShowDrawModal] = useState(false)
@@ -29,7 +30,9 @@ export default function AdminDraws() {
     contest_id: '',
     numbers: [],
     draw_date: '',
+    numbers_count: undefined, // Quantidade customizada de números (opcional)
   })
+  const [useCustomNumbersCount, setUseCustomNumbersCount] = useState(false)
   const [savingDraw, setSavingDraw] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
   
@@ -41,7 +44,7 @@ export default function AdminDraws() {
 
   useEffect(() => {
     loadDraws()
-  }, [filterContestId])
+  }, [filterContestId, filterOnlyOngoing])
 
   const loadData = async () => {
     try {
@@ -60,7 +63,16 @@ export default function AdminDraws() {
 
   const loadDraws = async () => {
     try {
-      const drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
+      let drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
+
+      // Filtrar por concursos em andamento se o filtro estiver ativo
+      if (filterOnlyOngoing) {
+        const activeContestIds = contests
+          .filter(c => c.status === 'active')
+          .map(c => c.id)
+        drawsData = drawsData.filter(draw => activeContestIds.includes(draw.contest_id))
+      }
+
       setDraws(drawsData)
     } catch (err) {
       console.error('Erro ao carregar sorteios:', err)
@@ -79,19 +91,24 @@ export default function AdminDraws() {
       const hours = String(date.getHours()).padStart(2, '0')
       const minutes = String(date.getMinutes()).padStart(2, '0')
       const dateTimeLocal = `${year}-${month}-${day}T${hours}:${minutes}`
-      
+
       setDrawForm({
         contest_id: draw.contest_id,
         numbers: [...draw.numbers],
         draw_date: dateTimeLocal,
+        numbers_count: draw.numbers_count,
       })
+      // Se o sorteio tem uma quantidade customizada, ativar o toggle
+      setUseCustomNumbersCount(draw.numbers_count !== undefined && draw.numbers_count !== null)
     } else {
       setEditingDraw(null)
       setDrawForm({
         contest_id: filterContestId !== 'all' ? filterContestId : '',
         numbers: [],
         draw_date: '',
+        numbers_count: undefined,
       })
+      setUseCustomNumbersCount(false)
     }
     setShowDrawModal(true)
   }
@@ -103,7 +120,9 @@ export default function AdminDraws() {
       contest_id: '',
       numbers: [],
       draw_date: '',
+      numbers_count: undefined,
     })
+    setUseCustomNumbersCount(false)
   }
 
   const handleGenerateRandomNumbers = () => {
@@ -119,7 +138,10 @@ export default function AdminDraws() {
 
     const min = contest.min_number || 0
     const max = contest.max_number || 99
-    const count = contest.numbers_per_participation || 6 // MODIFIQUEI AQUI - Sempre usa a quantidade do concurso
+    // Usa quantidade customizada se definida, senão usa a do concurso
+    const count = (useCustomNumbersCount && drawForm.numbers_count)
+      ? drawForm.numbers_count
+      : (contest.numbers_per_participation || 6)
 
     const generated: number[] = []
     while (generated.length < count) {
@@ -152,11 +174,14 @@ export default function AdminDraws() {
       return
     }
 
-    const maxNumbers = contest.numbers_per_participation || 6
+    // Usa quantidade customizada se definida, senão usa a do concurso
+    const maxNumbers = (useCustomNumbersCount && drawForm.numbers_count)
+      ? drawForm.numbers_count
+      : (contest.numbers_per_participation || 6)
     if (drawForm.numbers.length >= maxNumbers) {
       showErrorModal(
         'Limite atingido',
-        `Você já selecionou o máximo de ${maxNumbers} números permitidos para este concurso.`,
+        `Você já selecionou o máximo de ${maxNumbers} números permitidos${useCustomNumbersCount ? ' para este sorteio' : ' para este concurso'}.`,
         'numbers'
       )
       return
@@ -275,22 +300,25 @@ export default function AdminDraws() {
 
       const contest = contests.find(c => c.id === drawForm.contest_id)
       if (contest) {
-        const expectedCount = contest.numbers_per_participation || 6
+        // Usa quantidade customizada se definida, senão usa a do concurso
+        const expectedCount = (useCustomNumbersCount && drawForm.numbers_count)
+          ? drawForm.numbers_count
+          : (contest.numbers_per_participation || 6)
         if (drawForm.numbers.length !== expectedCount) {
           if (drawForm.numbers.length < expectedCount) {
-            // MODIFIQUEI AQUI - Pop-up bonito informando quantos números faltam
+            // Pop-up bonito informando quantos números faltam
             setSavingDraw(false)
             const missing = expectedCount - drawForm.numbers.length
             showErrorModal(
               'Números Insuficientes',
-              `Este concurso requer <strong>${expectedCount} números</strong> por sorteio.<br /><br />Você selecionou <strong>${drawForm.numbers.length} números</strong>.<br /><span class="text-orange-600 font-semibold">Faltam ${missing} número${missing > 1 ? 's' : ''}.</span>`,
+              `Este sorteio requer <strong>${expectedCount} números</strong>.<br /><br />Você selecionou <strong>${drawForm.numbers.length} números</strong>.<br /><span class="text-orange-600 font-semibold">Faltam ${missing} número${missing > 1 ? 's' : ''}.</span>`,
               'numbers'
             )
             return // Não permite salvar
           } else {
             // Se tiver mais números do que o esperado, pergunta se deseja continuar
             const confirm = window.confirm(
-              `Este concurso espera ${expectedCount} números por sorteio. ` +
+              `Este sorteio espera ${expectedCount} números. ` +
               `Você adicionou ${drawForm.numbers.length}. Deseja continuar mesmo assim?`
             )
             if (!confirm) return
@@ -311,6 +339,8 @@ export default function AdminDraws() {
       const input: CreateDrawInput | UpdateDrawInput = {
         ...drawForm,
         draw_date: new Date(drawForm.draw_date).toISOString(),
+        // Só incluir numbers_count se o toggle estiver ativo e houver um valor
+        numbers_count: useCustomNumbersCount ? drawForm.numbers_count : undefined,
       }
 
       if (editingDraw) {
@@ -511,12 +541,36 @@ export default function AdminDraws() {
                     className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
                   >
                     <option value="all">Todos os Concursos</option>
-                    {contests.map((contest) => (
+                    {contests
+                      .filter(contest => !filterOnlyOngoing || contest.status === 'active')
+                      .map((contest) => (
                       <option key={contest.id} value={contest.id}>
-                        {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}
+                        {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
                       </option>
                     ))}
                   </select>
+                  {/* Filtro de concursos em andamento */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="ongoing-filter"
+                      checked={filterOnlyOngoing}
+                      onChange={(e) => {
+                        setFilterOnlyOngoing(e.target.checked)
+                        // Se ativar o filtro e o concurso selecionado não estiver ativo, resetar para "todos"
+                        if (e.target.checked && filterContestId !== 'all') {
+                          const selectedContest = contests.find(c => c.id === filterContestId)
+                          if (selectedContest && selectedContest.status !== 'active') {
+                            setFilterContestId('all')
+                          }
+                        }
+                      }}
+                      className="w-4 h-4 text-[#1E7F43] bg-white border-2 border-[#E5E5E5] rounded focus:ring-[#1E7F43] focus:ring-2 cursor-pointer"
+                    />
+                    <label htmlFor="ongoing-filter" className="text-sm text-[#1F1F1F]/70 cursor-pointer select-none">
+                      Mostrar apenas concursos em andamento
+                    </label>
+                  </div>
                 </div>
                 <div className="flex items-end">
                   <button
@@ -609,7 +663,7 @@ export default function AdminDraws() {
                               </span>
                             </td>
                             <td className="py-3 px-4">
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-2 items-center">
                                 {draw.numbers.map((num, idx) => (
                                   <span
                                     key={idx}
@@ -618,6 +672,11 @@ export default function AdminDraws() {
                                     {String(num).padStart(2, '0')}
                                   </span>
                                 ))}
+                                {draw.numbers_count && (
+                                  <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-semibold" title={`Quantidade customizada: ${draw.numbers_count} números`}>
+                                    {draw.numbers_count}n
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="py-3 px-4">
@@ -700,6 +759,70 @@ export default function AdminDraws() {
 
                     {drawForm.contest_id && (
                       <>
+                        {/* Quantidade de números customizada (opcional) */}
+                        <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                          <div className="flex items-center justify-between mb-3">
+                            <label className="block text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
+                              Quantidade de Números
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-[#1F1F1F]/60">
+                                Padrão: {contests.find(c => c.id === drawForm.contest_id)?.numbers_per_participation || 6}
+                              </span>
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={useCustomNumbersCount}
+                                  onChange={(e) => {
+                                    setUseCustomNumbersCount(e.target.checked)
+                                    if (!e.target.checked) {
+                                      // Se desativar, limpar a quantidade customizada e os números
+                                      setDrawForm({ ...drawForm, numbers_count: undefined, numbers: [] })
+                                    } else {
+                                      // Se ativar, definir uma quantidade inicial igual à do concurso
+                                      const contest = contests.find(c => c.id === drawForm.contest_id)
+                                      setDrawForm({
+                                        ...drawForm,
+                                        numbers_count: contest?.numbers_per_participation || 6,
+                                        numbers: [], // Limpar números ao mudar quantidade
+                                      })
+                                    }
+                                  }}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1E7F43]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1E7F43]"></div>
+                                <span className="ml-2 text-xs font-medium text-[#1F1F1F]/70">Customizar</span>
+                              </label>
+                            </div>
+                          </div>
+                          {useCustomNumbersCount && (
+                            <div className="mt-3">
+                              <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={drawForm.numbers_count || ''}
+                                onChange={(e) => {
+                                  const value = parseInt(e.target.value, 10)
+                                  if (!isNaN(value) && value >= 1 && value <= 20) {
+                                    // Se mudar a quantidade, limpar os números selecionados
+                                    setDrawForm({ ...drawForm, numbers_count: value, numbers: [] })
+                                  } else if (e.target.value === '') {
+                                    setDrawForm({ ...drawForm, numbers_count: undefined, numbers: [] })
+                                  }
+                                }}
+                                placeholder="Ex: 1 (bolão), 6 (mega)"
+                                className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
+                              />
+                              <p className="text-xs text-[#1F1F1F]/60 mt-2">
+                                Defina uma quantidade diferente da configuração padrão do concurso.
+                                <br />
+                                <strong>Exemplo:</strong> Bolão com 1 dezena por sorteio, Mega com 6 números.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
                           <label htmlFor="draw-date" className="block text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
                             <span className="text-[#1E7F43]">*</span>
@@ -717,10 +840,13 @@ export default function AdminDraws() {
                         <div className="border-t border-[#E5E5E5] pt-4">
                           {(() => {
                             const contest = contests.find(c => c.id === drawForm.contest_id)
-                            const requiredCount = contest?.numbers_per_participation || 6
+                            // Usa quantidade customizada se definida, senão usa a do concurso
+                            const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
+                              ? drawForm.numbers_count
+                              : (contest?.numbers_per_participation || 6)
                             const selectedCount = drawForm.numbers.length
                             const isComplete = selectedCount === requiredCount
-                            
+
                             return (
                               <div className="mb-4">
                                 <div className="flex items-center justify-between mb-4">
@@ -730,11 +856,13 @@ export default function AdminDraws() {
                                       {isComplete ? (
                                         <span className="text-[#1E7F43] font-semibold">
                                           ✓ {selectedCount} de {requiredCount} números selecionados
+                                          {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
                                         </span>
                                       ) : (
                                         <span className={selectedCount < requiredCount ? 'text-orange-600 font-semibold' : 'text-[#1F1F1F]/70'}>
                                           {selectedCount} de {requiredCount} números selecionados
                                           {selectedCount < requiredCount && ` (faltam ${requiredCount - selectedCount})`}
+                                          {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
                                         </span>
                                       )}
                                     </p>
@@ -749,7 +877,7 @@ export default function AdminDraws() {
                                     Gerar Aleatórios ({requiredCount} números)
                                   </button>
                                 </div>
-                                
+
                                 {/* Barra de progresso visual */}
                                 <div className="mb-4">
                                   <div className="w-full bg-[#E5E5E5] rounded-full h-3">
@@ -814,7 +942,10 @@ export default function AdminDraws() {
                             const min = contest?.min_number || 0
                             const max = contest?.max_number || 99
                             const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i)
-                            const requiredCount = contest?.numbers_per_participation || 6
+                            // Usa quantidade customizada se definida, senão usa a do concurso
+                            const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
+                              ? drawForm.numbers_count
+                              : (contest?.numbers_per_participation || 6)
                             const isLimitReached = drawForm.numbers.length >= requiredCount
                             
                             return (

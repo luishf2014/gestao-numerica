@@ -8,10 +8,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getContestById } from '../services/contestsService'
 import { listDrawsByContestId } from '../services/drawsService'
-// MODIFIQUEI AQUI - Removido import de createParticipation (agora feito no checkout)
 import { Contest, Draw } from '../types'
 import NumberPicker from '../components/NumberPicker'
 import { useAuth } from '../contexts/AuthContext'
+import { useCart } from '../contexts/CartContext'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 import { canAcceptParticipations, getContestState } from '../utils/contestHelpers'
@@ -21,11 +21,13 @@ export default function JoinContestPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user, loading: authLoading } = useAuth()
+  const { addItem, getItemCount } = useCart()
   const [contest, setContest] = useState<Contest | null>(null)
   const [draws, setDraws] = useState<Draw[]>([])
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [addedToCart, setAddedToCart] = useState(false)
 
   useEffect(() => {
     // MODIFIQUEI AQUI - Redirecionar para login se não autenticado
@@ -105,10 +107,45 @@ export default function JoinContestPage() {
       return
     }
 
-    // MODIFIQUEI AQUI - Redirecionar para página de checkout ao invés de criar participação diretamente
+    // MODIFIQUEI AQUI - Salvar números no sessionStorage para persistência em caso de reload
+    sessionStorage.setItem('dezaqui_checkout', JSON.stringify({
+      contestId: id,
+      selectedNumbers,
+      timestamp: Date.now(),
+    }))
+
+    // Redirecionar para pagina de checkout ao inves de criar participacao diretamente
     navigate(`/contests/${id}/checkout`, {
       state: { selectedNumbers },
     })
+  }
+
+  // Funcao para adicionar ao carrinho
+  const handleAddToCart = () => {
+    if (!contest || selectedNumbers.length !== contest.numbers_per_participation) return
+
+    // Validar intervalo
+    const invalidNumbers = selectedNumbers.filter(
+      (n) => n < contest.min_number || n > contest.max_number
+    )
+    if (invalidNumbers.length > 0) {
+      setError(
+        `Numeros fora do intervalo permitido (${contest.min_number} - ${contest.max_number})`
+      )
+      return
+    }
+
+    // Adicionar ao carrinho
+    addItem(contest, selectedNumbers)
+    setAddedToCart(true)
+
+    // Limpar selecao para permitir adicionar mais
+    setSelectedNumbers([])
+
+    // Resetar feedback apos alguns segundos
+    setTimeout(() => {
+      setAddedToCart(false)
+    }, 3000)
   }
 
   // MODIFIQUEI AQUI - Mostrar loading apenas enquanto carrega o concurso ou autenticação
@@ -252,7 +289,48 @@ export default function JoinContestPage() {
             </div>
           )}
 
+          {/* Feedback de item adicionado ao carrinho */}
+          {addedToCart && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+              <div className="flex items-center justify-between">
+                <p className="text-green-700 text-sm font-semibold flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Aposta adicionada ao carrinho!
+                </p>
+                <Link
+                  to="/cart"
+                  className="text-green-700 font-semibold hover:underline text-sm"
+                >
+                  Ver Carrinho ({getItemCount()})
+                </Link>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-4">
+            {/* Botao Adicionar ao Carrinho */}
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              disabled={selectedNumbers.length !== contest.numbers_per_participation}
+              className={`
+                w-full sm:flex-1 py-3 px-6 rounded-xl font-semibold transition-colors shadow-lg text-sm sm:text-base flex items-center justify-center gap-2
+                ${
+                  selectedNumbers.length !== contest.numbers_per_participation
+                    ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
+                    : 'bg-[#F4C430] text-[#1F1F1F] hover:bg-[#F4C430]/80'
+                }
+              `}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Adicionar ao Carrinho
+            </button>
+
+            {/* Botao Comprar Agora */}
             <button
               type="submit"
               disabled={selectedNumbers.length !== contest.numbers_per_participation}
@@ -265,15 +343,24 @@ export default function JoinContestPage() {
                 }
               `}
             >
-              Continuar para Pagamento
+              Comprar Agora
             </button>
-            <Link
-              to={`/contests/${id}`}
-              className="w-full sm:w-auto py-3 px-6 rounded-xl font-semibold bg-[#E5E5E5] text-[#1F1F1F] hover:bg-[#E5E5E5]/80 transition-colors text-center text-sm sm:text-base"
-            >
-              Cancelar
-            </Link>
           </div>
+
+          {/* Link para carrinho se tiver itens */}
+          {getItemCount() > 0 && (
+            <div className="mt-4 text-center">
+              <Link
+                to="/cart"
+                className="text-[#1E7F43] font-semibold hover:underline inline-flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Ver Carrinho ({getItemCount()} {getItemCount() === 1 ? 'item' : 'itens'})
+              </Link>
+            </div>
+          )}
         </form>
       </div>
       <Footer />

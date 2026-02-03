@@ -10,12 +10,16 @@ import Footer from '../../components/Footer'
 import { useAuth } from '../../contexts/AuthContext'
 import { useEffect, useState } from 'react'
 import { listAllContests } from '../../services/contestsService'
+import { getRecentWinners, countRecentWinners, RecentWinner } from '../../services/payoutsService'
 import { Contest } from '../../types'
 
 export default function AdminDashboard() {
   const { profile, isAdmin, user, loading: authLoading } = useAuth()
   const [contests, setContests] = useState<Contest[]>([])
   const [loading, setLoading] = useState(true)
+  const [recentWinners, setRecentWinners] = useState<RecentWinner[]>([])
+  const [winnersCount, setWinnersCount] = useState(0)
+  const [loadingWinners, setLoadingWinners] = useState(true)
 
   // Debug: Log do estado de autenticação
   useEffect(() => {
@@ -30,6 +34,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadContests()
+    loadWinners()
   }, [])
 
   const loadContests = async () => {
@@ -40,6 +45,22 @@ export default function AdminDashboard() {
       console.error('Erro ao carregar concursos:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadWinners = async () => {
+    try {
+      setLoadingWinners(true)
+      const [winners, count] = await Promise.all([
+        getRecentWinners(5),
+        countRecentWinners(),
+      ])
+      setRecentWinners(winners)
+      setWinnersCount(count)
+    } catch (error) {
+      console.error('Erro ao carregar ganhadores:', error)
+    } finally {
+      setLoadingWinners(false)
     }
   }
 
@@ -64,6 +85,40 @@ export default function AdminDashboard() {
             Bem-vindo, {profile?.name || 'Administrador'}! Gerencie seus concursos e participantes.
           </p>
         </div>
+
+        {/* Notificação de Ganhadores (se houver) */}
+        {winnersCount > 0 && (
+          <div className="mb-6 animate-pulse">
+            <Link
+              to="/admin/reports"
+              className="block bg-gradient-to-r from-[#F4C430] to-[#FFD700] rounded-2xl border-2 border-[#F4C430] p-6 shadow-lg hover:shadow-xl transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/30 rounded-full">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-[#1F1F1F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-[#1F1F1F]">
+                    {winnersCount === 1 ? 'Novo Ganhador!' : `${winnersCount} Novos Ganhadores!`}
+                  </h3>
+                  <p className="text-sm text-[#1F1F1F]/80">
+                    {winnersCount === 1
+                      ? 'Um participante atingiu a pontuação máxima nas últimas 24h.'
+                      : `${winnersCount} participantes atingiram pontuação máxima nas últimas 24h.`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[#1F1F1F] font-semibold">
+                  Ver Relatório
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </div>
+            </Link>
+          </div>
+        )}
 
         {/* Cards de Estatísticas */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -133,7 +188,76 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* MODIFIQUEI AQUI - Seção de Módulos Administrativos */}
+        {/* Seção de Ganhadores Recentes */}
+        {recentWinners.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-[#F4C430]/20 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-bold text-[#1F1F1F]">Ganhadores Recentes</h2>
+              </div>
+              <Link
+                to="/admin/reports"
+                className="text-sm text-[#1E7F43] font-semibold hover:underline"
+              >
+                Ver todos
+              </Link>
+            </div>
+
+            {loadingWinners ? (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#F4C430]"></div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentWinners.map((winner) => (
+                  <div
+                    key={winner.id}
+                    className="p-4 rounded-xl bg-gradient-to-r from-[#F4C430]/10 to-transparent border border-[#F4C430]/30"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-[#F4C430] rounded-full flex items-center justify-center text-white font-bold">
+                          {winner.user_name?.charAt(0).toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-[#1F1F1F]">{winner.user_name}</h4>
+                          <p className="text-sm text-[#1F1F1F]/70">
+                            {winner.contest_name}
+                            {winner.draw_date && (
+                              <span className="ml-2 text-xs text-[#1F1F1F]/50">
+                                {new Date(winner.draw_date).toLocaleDateString('pt-BR')}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 bg-[#F4C430] text-[#1F1F1F] rounded-lg text-xs font-bold">
+                            {winner.score} pts
+                          </span>
+                          <span className="px-2 py-1 bg-[#1E7F43] text-white rounded-lg text-xs font-bold">
+                            TOP
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold text-[#1E7F43] mt-1">
+                          R$ {winner.amount_won.toFixed(2).replace('.', ',')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Seção de Módulos Administrativos */}
         <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-8">
           <h2 className="text-xl font-bold text-[#1F1F1F] mb-4">Módulos Administrativos</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

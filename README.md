@@ -208,7 +208,7 @@ dezaqui/
 │   └── migrations/           # Migrações SQL
 └── README.md
 ```
-----
+---
 
 ##📈 Roadmap (Implementado)
  - ✅ Sistema de autenticação

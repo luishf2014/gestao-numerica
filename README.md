@@ -172,7 +172,7 @@ Camadas de Proteção
    - Conta no Asaas (sandbox ou produção)
 
 Passo a passo
-
+```
 # Clone o repositório
 git clone https://github.com/luishf2014/dezaqui.git
 
@@ -184,10 +184,11 @@ npm install
 
 # Inicie o ambiente de desenvolvimento
 npm run dev
-
+```
 A aplicação estará disponível em:
+```
 - http://localhost:3000
-
+```
 ## 📂 Estrutura do Projeto
 ```
 dezaqui/

@@ -13,7 +13,7 @@ import Footer from '../components/Footer'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { user, profile, loading: authLoading } = useAuth()
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth()
   
   // Estado do perfil
   const [name, setName] = useState('')
@@ -205,6 +205,9 @@ export default function SettingsPage() {
       if (updateData.cpf) {
         setHasCpfSaved(true)
       }
+
+      // Atualizar o perfil no contexto de autenticação para refletir as mudanças
+      await refreshProfile()
 
       setSuccess('Perfil atualizado com sucesso!')
       setTimeout(() => setSuccess(null), 3000)

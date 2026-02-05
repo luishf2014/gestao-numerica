@@ -16,6 +16,7 @@ interface AuthContextType {
   isAdmin: boolean
   loading: boolean
   logout: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   loading: true,
   logout: async () => {},
+  refreshProfile: async () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -210,6 +212,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Se profile não existe ainda (novo usuário), assume que não é admin
   const isAdmin = profile?.is_admin === true
 
+  // MODIFIQUEI AQUI - Função para recarregar o perfil (útil após editar perfil)
+  const refreshProfile = async (): Promise<void> => {
+    if (user?.id) {
+      console.log('[AuthContext] Recarregando perfil...')
+      await loadProfile(user.id)
+    }
+  }
+
   // MODIFIQUEI AQUI - Função de logout centralizada
   const logout = async (): Promise<void> => {
     try {
@@ -253,7 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, profile, isAdmin, loading])
 
   return (
-    <AuthContext.Provider value={{ user, profile, isAdmin, loading, logout }}>
+    <AuthContext.Provider value={{ user, profile, isAdmin, loading, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

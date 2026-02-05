@@ -133,11 +133,15 @@ export default function RankingPage() {
 
   const drawnNumbersSorted = useMemo((): number[] => {
     const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
     const allNumbers = new Set<number>()
+    drawsToUse.forEach((draw) => {
     drawsToUse.forEach((draw) => {
       draw.numbers.forEach((num) => allNumbers.add(num))
     })
     return Array.from(allNumbers).sort((a, b) => a - b)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draws, selectedDrawId, drawsSortedAsc])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draws, selectedDrawId, drawsSortedAsc])
 
@@ -150,10 +154,18 @@ export default function RankingPage() {
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
     const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
     return getAllHitNumbers(participation.numbers, drawsToUse)
+    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+    return getAllHitNumbers(participation.numbers, drawsToUse)
   }
 
   const maxScoreToDisplay = useMemo(() => {
     if (participations.length === 0) return 0
+    let max = 0
+    for (const p of participations) {
+      const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
+      if (s > max) max = s
+    }
+    return max
     let max = 0
     for (const p of participations) {
       const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
@@ -608,6 +620,8 @@ export default function RankingPage() {
                 <tbody>
                   {(() => {
                     const sortedParticipations = [...participations].sort((a, b) => {
+                      const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
+                      const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
                       const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       if (scoreB !== scoreA) return scoreB - scoreA

@@ -10,6 +10,7 @@ import Header from '../../components/Header'
 import Footer from '../../components/Footer'
 import { listAllContests } from '../../services/contestsService'
 import { listAllDraws, createDraw, updateDraw, deleteDraw, CreateDrawInput, UpdateDrawInput } from '../../services/drawsService'
+import { supabase } from '../../lib/supabase'
 import { Contest, Draw } from '../../types'
 
 export default function AdminDraws() {
@@ -65,12 +66,14 @@ export default function AdminDraws() {
     try {
       let drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
 
-      // Filtrar por concursos em andamento se o filtro estiver ativo
+      // Filtrar por concursos em andamento (ativos ou finalizados, excluindo rascunhos e cancelados)
+      // Nota: o trigger auto_finish_contest_on_first_draw muda o status para 'finished' ao criar o primeiro sorteio,
+      // então concursos com sorteios terão status 'finished', não 'active'
       if (filterOnlyOngoing) {
-        const activeContestIds = contests
-          .filter(c => c.status === 'active')
+        const ongoingContestIds = contests
+          .filter(c => c.status === 'active' || c.status === 'finished')
           .map(c => c.id)
-        drawsData = drawsData.filter(draw => activeContestIds.includes(draw.contest_id))
+        drawsData = drawsData.filter(draw => ongoingContestIds.includes(draw.contest_id))
       }
 
       setDraws(drawsData)
@@ -336,6 +339,28 @@ export default function AdminDraws() {
         return
       }
 
+      // Verificar se algum participante já atingiu a pontuação máxima (antes de criar novo sorteio)
+      if (!editingDraw && contest) {
+        const { data: maxScoreData } = await supabase
+          .from('participations')
+          .select('current_score')
+          .eq('contest_id', drawForm.contest_id)
+          .eq('status', 'active')
+          .order('current_score', { ascending: false })
+          .limit(1)
+
+        const maxCurrentScore = maxScoreData?.[0]?.current_score || 0
+        if (maxCurrentScore >= (contest.numbers_per_participation || 10)) {
+          setSavingDraw(false)
+          showErrorModal(
+            'Concurso Finalizado',
+            `Um participante já atingiu a pontuação máxima de <strong>${contest.numbers_per_participation} acertos</strong>.<br /><br />Não é possível criar novos sorteios para este concurso.`,
+            'warning'
+          )
+          return
+        }
+      }
+
       const input: CreateDrawInput | UpdateDrawInput = {
         ...drawForm,
         draw_date: new Date(drawForm.draw_date).toISOString(),
@@ -542,7 +567,7 @@ export default function AdminDraws() {
                   >
                     <option value="all">Todos os Concursos</option>
                     {contests
-                      .filter(contest => !filterOnlyOngoing || contest.status === 'active')
+                      .filter(contest => !filterOnlyOngoing || (contest.status === 'active' || contest.status === 'finished'))
                       .map((contest) => (
                       <option key={contest.id} value={contest.id}>
                         {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
@@ -557,10 +582,10 @@ export default function AdminDraws() {
                       checked={filterOnlyOngoing}
                       onChange={(e) => {
                         setFilterOnlyOngoing(e.target.checked)
-                        // Se ativar o filtro e o concurso selecionado não estiver ativo, resetar para "todos"
+                        // Se ativar o filtro e o concurso selecionado for rascunho ou cancelado, resetar para "todos"
                         if (e.target.checked && filterContestId !== 'all') {
                           const selectedContest = contests.find(c => c.id === filterContestId)
-                          if (selectedContest && selectedContest.status !== 'active') {
+                          if (selectedContest && selectedContest.status !== 'active' && selectedContest.status !== 'finished') {
                             setFilterContestId('all')
                           }
                         }

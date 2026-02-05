@@ -4,7 +4,7 @@
  * 
  * Taxas, parametrização e valores
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react' // MODIFIQUEI AQUI - adicionado useRef
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
@@ -20,6 +20,10 @@ export default function AdminFinance() {
   const [stats, setStats] = useState<FinancialStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // MODIFIQUEI AQUI - controle de concorrência de requisições (evita "piscar e voltar")
+  const paymentsReqIdRef = useRef(0)
+  const statsReqIdRef = useRef(0)
   
   // Estados para filtros
   const [filterContestId, setFilterContestId] = useState<string>('all')
@@ -67,8 +71,10 @@ export default function AdminFinance() {
       setError(null)
       const contestsData = await listAllContests()
       setContests(contestsData)
-      await loadPayments()
-      await loadStats()
+
+      // MODIFIQUEI AQUI - removido loadPayments/loadStats daqui para evitar concorrência/duplicidade
+      // await loadPayments()
+      // await loadStats()
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados financeiros')
@@ -78,6 +84,7 @@ export default function AdminFinance() {
   }
 
   const loadPayments = async () => {
+    const reqId = ++paymentsReqIdRef.current // MODIFIQUEI AQUI
     try {
       const filters: PaymentFilters = {}
       
@@ -98,20 +105,37 @@ export default function AdminFinance() {
       }
 
       const paymentsData = await listAllPayments(filters)
+
+      // MODIFIQUEI AQUI - ignora resposta antiga (evita sobrescrever com dados anteriores)
+      if (reqId !== paymentsReqIdRef.current) return
+
       setPayments(paymentsData)
     } catch (err) {
+      // MODIFIQUEI AQUI - ignora erro de requisição antiga
+      if (reqId !== paymentsReqIdRef.current) return
+
       console.error('Erro ao carregar pagamentos:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar histórico financeiro')
     }
   }
 
   const loadStats = async () => {
+    const reqId = ++statsReqIdRef.current // MODIFIQUEI AQUI
     try {
       const filters: PaymentFilters = {}
       
       if (filterContestId !== 'all') {
         filters.contestId = filterContestId
       }
+
+      // MODIFIQUEI AQUI - aplicar também status e método para os cards baterem com os filtros
+      if (filterStatus !== 'all') {
+        filters.status = filterStatus as 'pending' | 'paid' | 'cancelled' | 'refunded'
+      }
+      if (filterMethod !== 'all') {
+        filters.paymentMethod = filterMethod as 'pix' | 'cash' | 'manual'
+      }
+
       if (startDate) {
         filters.startDate = startDate
       }
@@ -120,8 +144,15 @@ export default function AdminFinance() {
       }
 
       const statsData = await getFinancialStats(filters)
+
+      // MODIFIQUEI AQUI - ignora resposta antiga
+      if (reqId !== statsReqIdRef.current) return
+
       setStats(statsData)
     } catch (err) {
+      // MODIFIQUEI AQUI - ignora erro de requisição antiga
+      if (reqId !== statsReqIdRef.current) return
+
       console.error('Erro ao carregar estatísticas:', err)
     }
   }
@@ -962,7 +993,7 @@ export default function AdminFinance() {
               {discounts.length === 0 ? (
                 <div className="text-center py-12 text-[#1F1F1F]/70">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto mb-4 text-[#1F1F1F]/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 010 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
                   </svg>
                   <p>Nenhum desconto cadastrado</p>
                   <p className="text-sm mt-2">Clique em "Novo Desconto" para criar sua primeira promoção</p>

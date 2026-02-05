@@ -32,7 +32,7 @@ export default function AdminActivations() {
   // MODIFIQUEI AQUI - Estados para modal de registro de pagamento
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [selectedParticipation, setSelectedParticipation] = useState<ParticipationWithDetails | null>(null)
-  const [paymentAmount, setPaymentAmount] = useState<string>('')
+  const [paymentAmount, setPaymentAmount] = useState<string>('') // MODIFIQUEI AQUI - valor agora fica travado (origem: concurso/checkout)
   const [paymentNotes, setPaymentNotes] = useState<string>('')
   const [registeringPayment, setRegisteringPayment] = useState(false)
   // MODIFIQUEI AQUI - Estado para modal de sucesso
@@ -48,23 +48,38 @@ export default function AdminActivations() {
       setLoading(true)
       setError(null)
       console.log('[AdminActivations] Carregando participações pendentes...')
-      
+
       const [participationsData, contestsData] = await Promise.all([
         listPendingParticipations(),
         listAllContests(),
       ])
-      
+
       console.log('[AdminActivations] Participações pendentes encontradas:', participationsData.length)
-      
+
       // MODIFIQUEI AQUI - Carregar pagamentos para cada participação
+      // MODIFIQUEI AQUI - Se não tiver "paid", manter o último pagamento encontrado (para travar valor quando existir)
       const participationsWithPayments = await Promise.all(
         participationsData.map(async (participation) => {
           try {
             const payments = await getPaymentsByParticipation(participation.id)
+
             const paidPayment = payments.find(p => p.status === 'paid')
+            if (paidPayment) {
+              return { ...participation, payment: paidPayment }
+            }
+
+            // MODIFIQUEI AQUI - fallback: pegar o último pagamento (se existir)
+            const lastPayment = (payments || [])
+              .slice()
+              .sort((a: any, b: any) => {
+                const da = new Date((a.created_at || a.paid_at || a.updated_at || 0) as any).getTime()
+                const db = new Date((b.created_at || b.paid_at || b.updated_at || 0) as any).getTime()
+                return db - da
+              })[0] || null
+
             return {
               ...participation,
-              payment: paidPayment || null,
+              payment: lastPayment,
             }
           } catch (err) {
             console.warn(`Erro ao carregar pagamento para participação ${participation.id}:`, err)
@@ -75,7 +90,7 @@ export default function AdminActivations() {
           }
         })
       )
-      
+
       console.log('[AdminActivations] Participações com pagamentos carregadas:', participationsWithPayments.length)
       setParticipations(participationsWithPayments)
       setContests(contestsData)
@@ -90,20 +105,25 @@ export default function AdminActivations() {
   // MODIFIQUEI AQUI - Abrir modal para registrar pagamento em dinheiro
   const handleRegisterPayment = (participation: ParticipationWithDetails) => {
     setSelectedParticipation(participation)
-    // MODIFIQUEI AQUI - Inicializar com valor do concurso (admin pode editar para aplicar desconto)
-    const contestValue = participation.contest?.participation_value || 0
-    setPaymentAmount(contestValue > 0 ? contestValue.toFixed(2).replace('.', ',') : '')
+
+    // MODIFIQUEI AQUI - Trava o valor (origem: pagamento existente OU valor do concurso)
+    const lockedValue =
+      (participation.payment?.amount && participation.payment.amount > 0
+        ? participation.payment.amount
+        : (participation.contest?.participation_value || 0))
+
+    setPaymentAmount(lockedValue > 0 ? lockedValue.toFixed(2).replace('.', ',') : '')
     setPaymentNotes('')
     setShowPaymentModal(true)
   }
 
   // MODIFIQUEI AQUI - Função auxiliar para mostrar modais de erro com ícones
   type ErrorIconType = 'warning' | 'error' | 'money'
-  
+
   const showErrorModal = (title: string, message: string, iconType: ErrorIconType = 'warning') => {
     let iconSvg = ''
     let iconBgClass = 'bg-orange-500'
-    
+
     switch (iconType) {
       case 'money':
         iconSvg = `
@@ -131,7 +151,7 @@ export default function AdminActivations() {
         iconBgClass = 'bg-orange-500'
         break
     }
-    
+
     const modal = document.createElement('div')
     modal.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.2s_ease-out]'
     modal.innerHTML = `
@@ -149,7 +169,7 @@ export default function AdminActivations() {
       </div>
     `
     document.body.appendChild(modal)
-    
+
     const closeBtn = modal.querySelector('button')
     const closeModal = () => {
       modal.remove()
@@ -166,7 +186,7 @@ export default function AdminActivations() {
   const handleSubmitPayment = async () => {
     if (!selectedParticipation) return
 
-    // MODIFIQUEI AQUI - Validar valor informado pelo admin (permite aplicar desconto)
+    // MODIFIQUEI AQUI - Validar valor configurado (agora travado)
     const contestValue = selectedParticipation.contest?.participation_value
     if (!contestValue || contestValue <= 0) {
       showErrorModal(
@@ -177,25 +197,16 @@ export default function AdminActivations() {
       return
     }
 
-    // MODIFIQUEI AQUI - Usar valor informado pelo admin (permite desconto) ou valor do concurso como padrão
-    const amountToUse = paymentAmount.trim() 
-      ? parseFloat(paymentAmount.replace(',', '.'))
-      : contestValue
+    // MODIFIQUEI AQUI - Valor travado: usa payment.amount se existir, senão usa contestValue
+    const amountToUse =
+      (selectedParticipation.payment?.amount && selectedParticipation.payment.amount > 0)
+        ? selectedParticipation.payment.amount
+        : contestValue
 
     if (isNaN(amountToUse) || amountToUse <= 0) {
       showErrorModal(
         'Valor inválido',
-        'Por favor, informe um valor válido maior que zero.',
-        'money'
-      )
-      return
-    }
-
-    // MODIFIQUEI AQUI - Validar que o valor não seja maior que o valor do concurso (evitar fraudes)
-    if (amountToUse > contestValue) {
-      showErrorModal(
-        'Valor inválido',
-        `O valor informado (R$ ${amountToUse.toFixed(2)}) não pode ser maior que o valor do concurso (R$ ${contestValue.toFixed(2)}).`,
+        'Não foi possível determinar um valor válido para esta participação.',
         'money'
       )
       return
@@ -203,44 +214,44 @@ export default function AdminActivations() {
 
     setRegisteringPayment(true)
     try {
-      // MODIFIQUEI AQUI - Registrar pagamento com o valor informado pelo admin (pode ter desconto aplicado)
+      // MODIFIQUEI AQUI - Registrar pagamento com valor travado
       await createCashPayment({
         participationId: selectedParticipation.id,
-        amount: amountToUse, // MODIFIQUEI AQUI - Usar valor informado pelo admin (permite desconto)
+        amount: amountToUse, // MODIFIQUEI AQUI - valor travado
         notes: paymentNotes.trim() || undefined,
       })
-      
+
       // MODIFIQUEI AQUI - Ativar participação automaticamente após registrar pagamento
       console.log('[AdminActivations] Ativando participação após registrar pagamento:', selectedParticipation.id)
       const updatedParticipation = await activateParticipation(selectedParticipation.id)
       console.log('[AdminActivations] Participação ativada. Status:', updatedParticipation.status)
-      
+
       // MODIFIQUEI AQUI - Preparar dados para modal de sucesso
       setSuccessData({
         userName: selectedParticipation.user?.name || 'Usuário',
-        amount: amountToUse, // MODIFIQUEI AQUI - Usar valor informado pelo admin
+        amount: amountToUse,
         ticketCode: selectedParticipation.ticket_code,
       })
-      
+
       // MODIFIQUEI AQUI - Fechar modal de pagamento primeiro
       setShowPaymentModal(false)
       setSelectedParticipation(null)
       setPaymentAmount('')
       setPaymentNotes('')
-      
+
       // MODIFIQUEI AQUI - Aguardar um pouco para garantir que a atualização seja propagada
       await new Promise(resolve => setTimeout(resolve, 500))
-      
+
       // MODIFIQUEI AQUI - Recarregar dados e remover a participação da lista localmente
       await loadData()
-      
+
       // MODIFIQUEI AQUI - Verificar se a participação foi removida da lista
       const stillInList = participations.find(p => p.id === selectedParticipation.id)
       if (stillInList) {
         console.warn('[AdminActivations] ATENÇÃO: Participação ainda aparece na lista após ativação. Forçando remoção local.')
         setParticipations(prev => prev.filter(p => p.id !== selectedParticipation.id))
       }
-      
+
       // MODIFIQUEI AQUI - Mostrar modal de sucesso
       setShowSuccessModal(true)
     } catch (err) {
@@ -267,13 +278,13 @@ export default function AdminActivations() {
       console.log('[AdminActivations] Ativando participação:', participationId)
       const updatedParticipation = await activateParticipation(participationId)
       console.log('[AdminActivations] Participação ativada. Status:', updatedParticipation.status)
-      
+
       // MODIFIQUEI AQUI - Aguardar um pouco para garantir que a atualização seja propagada
       await new Promise(resolve => setTimeout(resolve, 500))
-      
+
       // MODIFIQUEI AQUI - Recarregar dados e remover a participação da lista localmente também
       await loadData()
-      
+
       // MODIFIQUEI AQUI - Verificar se a participação foi removida da lista (deve ter sido, pois status mudou para 'active')
       const stillInList = participations.find(p => p.id === participationId)
       if (stillInList) {
@@ -320,27 +331,26 @@ export default function AdminActivations() {
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         {/* Cabeçalho */}
         <div className="mb-6">
           <div className="mb-6 relative flex flex-col sm:flex-row sm:items-center">
             <button
-            onClick={() => navigate('/admin')}
-            className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Voltar ao Dashboard
-          </button>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:mb-0">
+              onClick={() => navigate('/admin')}
+              className="text-[#1E7F43] hover:text-[#3CCB7F] font-semibold mb-4 flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Voltar ao Dashboard
+            </button>
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-[#1F1F1F] mb-2 sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:mb-0">
               Ativações
             </h1>
           </div>
-          
+
           <div className="text-center">
-            
             <p className="text-[#1F1F1F]/70">
               Ativar participações manualmente ou gerenciar pendências de pagamento Pix
             </p>
@@ -524,7 +534,9 @@ export default function AdminActivations() {
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#3CCB7F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <span className="text-xs font-semibold text-[#3CCB7F]">Pagamento Registrado</span>
+                          <span className="text-xs font-semibold text-[#3CCB7F]">
+                            Pagamento Encontrado
+                          </span>
                         </div>
                         <p className="text-xs text-[#1F1F1F]/70">
                           Valor: R$ {participation.payment.amount.toFixed(2).replace('.', ',')} | 
@@ -549,7 +561,7 @@ export default function AdminActivations() {
                         Registrar Pagamento em Dinheiro
                       </button>
                     )}
-                    
+
                     {/* MODIFIQUEI AQUI - Botão de ativar só aparece quando já tem pagamento registrado */}
                     {participation.payment && (
                       <button
@@ -631,43 +643,17 @@ export default function AdminActivations() {
                     </span>
                   )}
                 </label>
+
+                {/* MODIFIQUEI AQUI - Valor travado (sem edição no admin) */}
                 <input
                   id="payment-amount"
                   type="text"
                   value={paymentAmount}
-                  onChange={(e) => {
-                    // MODIFIQUEI AQUI - Permitir apenas números, vírgula e ponto
-                    const value = e.target.value.replace(/[^\d,.-]/g, '').replace(',', '.')
-                    if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
-                      setPaymentAmount(e.target.value)
-                    }
-                  }}
-                  placeholder="0,00"
-                  className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all"
+                  readOnly
+                  className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl bg-[#F9F9F9] text-[#1F1F1F] focus:outline-none"
                   disabled={registeringPayment}
                 />
-                {/* MODIFIQUEI AQUI - Mostrar informação sobre desconto */}
-                {selectedParticipation.contest?.participation_value && paymentAmount && (
-                  (() => {
-                    const enteredValue = parseFloat(paymentAmount.replace(',', '.')) || 0
-                    const contestValue = selectedParticipation.contest.participation_value
-                    const discount = contestValue - enteredValue
-                    if (discount > 0 && enteredValue > 0) {
-                      return (
-                        <p className="text-xs text-green-600 mt-1">
-                          ✓ Desconto aplicado: R$ {discount.toFixed(2).replace('.', ',')} ({((discount / contestValue) * 100).toFixed(1)}%)
-                        </p>
-                      )
-                    } else if (discount < 0) {
-                      return (
-                        <p className="text-xs text-red-600 mt-1">
-                          ⚠ Valor maior que o do concurso. Verifique o valor informado.
-                        </p>
-                      )
-                    }
-                    return null
-                  })()
-                )}
+
                 {!selectedParticipation.contest?.participation_value && (
                   <p className="mt-2 text-xs text-red-600 font-semibold">
                     ⚠️ Configure o valor do concurso antes de registrar o pagamento.
@@ -729,14 +715,14 @@ export default function AdminActivations() {
 
       {/* MODIFIQUEI AQUI - Modal de sucesso após registro de pagamento */}
       {showSuccessModal && successData && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
           onClick={() => {
             setShowSuccessModal(false)
             setSuccessData(null)
           }}
         >
-          <div 
+          <div
             className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 transform transition-all duration-300 animate-[slideDown_0.3s_ease-out]"
             onClick={(e) => e.stopPropagation()}
           >

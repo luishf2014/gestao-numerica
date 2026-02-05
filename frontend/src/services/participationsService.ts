@@ -18,10 +18,11 @@ import { generateTicketCode } from '../utils/ticketCodeGenerator'
 export async function createParticipation(params: {
   contestId: string
   numbers: number[]
+  amount: number // MODIFIQUEI AQUI - valor travado vindo do checkout
 }): Promise<Participation> {
   // Buscar o usuário autenticado
   const { data: { user } } = await supabase.auth.getUser()
-  
+
   if (!user) {
     throw new Error('Usuário não autenticado')
   }
@@ -29,6 +30,11 @@ export async function createParticipation(params: {
   // MODIFIQUEI AQUI - Validar dados antes de enviar
   if (!params.contestId || !params.numbers || params.numbers.length === 0) {
     throw new Error('Dados inválidos para criar participação')
+  }
+
+  // MODIFIQUEI AQUI - Validar valor travado
+  if (!Number.isFinite(params.amount) || params.amount <= 0) {
+    throw new Error('Valor inválido para criar participação')
   }
 
   // MODIFIQUEI AQUI - Validar se o concurso está ativo e pode aceitar participações
@@ -97,7 +103,7 @@ export async function createParticipation(params: {
     const num = Number(n)
     return Number.isInteger(num) && !Number.isNaN(num) && num >= 0 ? num : null
   }).filter((n): n is number => n !== null)
-  
+
   if (validNumbers.length !== params.numbers.length) {
     console.error('[participationsService] Números recebidos:', params.numbers, 'Tipo:', typeof params.numbers[0])
     console.error('[participationsService] Números válidos:', validNumbers)
@@ -113,7 +119,7 @@ export async function createParticipation(params: {
     .single()
 
   if (contestInfo) {
-    const invalidRange = validNumbers.filter(n => 
+    const invalidRange = validNumbers.filter(n =>
       n < contestInfo.min_number || n > contestInfo.max_number
     )
     if (invalidRange.length > 0) {
@@ -139,6 +145,7 @@ export async function createParticipation(params: {
           numbers: validNumbers, // MODIFIQUEI AQUI - Usar números validados e convertidos
           status: 'pending', // Status padrão
           ticket_code: ticketCode, // MODIFIQUEI AQUI - Adicionar código/ticket único
+          amount: params.amount, // MODIFIQUEI AQUI - salvar valor travado vindo do checkout
         })
         .select('*')
         .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() ao invés de single() para evitar erro 406
@@ -150,7 +157,7 @@ export async function createParticipation(params: {
           ticketCode = generateTicketCode()
           continue
         }
-        
+
         // Tratar erros de RLS com mensagem amigável
         if (error.code === '42501') {
           throw new Error('Você não tem permissão para criar esta participação')
@@ -202,7 +209,7 @@ export async function listMyParticipationsByContest(
 ): Promise<Participation[]> {
   // Buscar o usuário autenticado
   const { data: { user } } = await supabase.auth.getUser()
-  
+
   if (!user) {
     throw new Error('Usuário não autenticado')
   }
@@ -233,7 +240,7 @@ export async function listMyParticipationsByContest(
 export async function listMyParticipations(): Promise<Array<Participation & { contest: Contest | null }>> {
   // Buscar o usuário autenticado
   const { data: { user } } = await supabase.auth.getUser()
-  
+
   if (!user) {
     throw new Error('Usuário não autenticado')
   }

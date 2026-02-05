@@ -160,16 +160,31 @@ export interface PaymentWithDetails extends Payment {
   } | null
 }
 
+// MODIFIQUEI AQUI - helper para endDate incluir o dia inteiro
+function normalizeEndDate(endDate: string): string {
+  // se vier "YYYY-MM-DD", transforma em "YYYY-MM-DDT23:59:59.999"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return `${endDate}T23:59:59.999`
+  }
+  return endDate
+}
+
 export async function listAllPayments(filters?: PaymentFilters): Promise<PaymentWithDetails[]> {
+  // MODIFIQUEI AQUI - trazer contest junto no mesmo select (sem N+1)
+  // e aplicar filtro de contestId no banco (sem pós-filter)
   let query = supabase
     .from('payments')
     .select(`
       *,
-      participations (
+      participations!inner (
         id,
         ticket_code,
         contest_id,
-        user_id
+        user_id,
+        contests (
+          id,
+          name
+        )
       )
     `)
     .order('created_at', { ascending: false })
@@ -183,11 +198,17 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
   }
 
   if (filters?.startDate) {
-    query = query.gte('created_at', filters.startDate)
+    // se vier "YYYY-MM-DD", ok: gte a partir da meia-noite desse dia
+    query = query.gte('created_at', /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate) ? `${filters.startDate}T00:00:00.000` : filters.startDate)
   }
 
   if (filters?.endDate) {
-    query = query.lte('created_at', filters.endDate)
+    query = query.lte('created_at', normalizeEndDate(filters.endDate)) // MODIFIQUEI AQUI
+  }
+
+  if (filters?.contestId) {
+    // MODIFIQUEI AQUI - filtrar pelo concurso via tabela relacionada
+    query = query.eq('participations.contest_id', filters.contestId)
   }
 
   const { data, error } = await query
@@ -199,50 +220,35 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
     throw new Error(`Erro ao buscar pagamentos: ${error.message}`)
   }
 
-  // Buscar informações dos concursos para cada participação
-  const paymentsWithDetails = await Promise.all(
-    (data || []).map(async (item: any) => {
-      // participations pode ser um array ou objeto único
-      const participationData = Array.isArray(item.participations) 
-        ? item.participations[0] || null 
-        : item.participations || null
-      
-      let contest = null
+  const rows = (data || []) as any[]
 
-      // Se tiver filtro por concurso, verificar aqui
-      if (filters?.contestId && participationData?.contest_id !== filters.contestId) {
-        return null
-      }
+  // MODIFIQUEI AQUI - mapear sem chamadas extras
+  const paymentsWithDetails: PaymentWithDetails[] = rows.map((item: any) => {
+    const participationData = Array.isArray(item.participations)
+      ? item.participations[0] || null
+      : item.participations || null
 
-      // Buscar informações do concurso
-      if (participationData?.contest_id) {
-        try {
-          const { data: contestData } = await supabase
-            .from('contests')
-            .select('id, name')
-            .eq('id', participationData.contest_id)
-            .maybeSingle() // MODIFIQUEI AQUI - Usar maybeSingle() para evitar erro 406
-          contest = contestData || null
-        } catch (err) {
-          console.warn(`Erro ao buscar concurso ${participationData.contest_id}:`, err)
-        }
-      }
+    const contestData =
+      participationData?.contests
+        ? (Array.isArray(participationData.contests) ? participationData.contests[0] : participationData.contests)
+        : null
 
-      return {
-        ...item,
-        participation: participationData ? {
-          id: participationData.id,
-          ticket_code: participationData.ticket_code,
-          contest_id: participationData.contest_id,
-          user_id: participationData.user_id,
-        } : null,
-        contest,
-      }
-    })
-  )
+    return {
+      ...item,
+      participation: participationData ? {
+        id: participationData.id,
+        ticket_code: participationData.ticket_code,
+        contest_id: participationData.contest_id,
+        user_id: participationData.user_id,
+      } : null,
+      contest: contestData ? {
+        id: contestData.id,
+        name: contestData.name,
+      } : null,
+    }
+  })
 
-  // Filtrar nulls (quando não passou no filtro de concurso)
-  return paymentsWithDetails.filter((p): p is PaymentWithDetails => p !== null)
+  return paymentsWithDetails
 }
 
 /**
@@ -270,6 +276,7 @@ export interface FinancialStats {
 }
 
 export async function getFinancialStats(filters?: PaymentFilters): Promise<FinancialStats> {
+  // Mantive sua lógica para não mudar comportamento, mas agora listAllPayments retorna consistente
   const payments = await listAllPayments(filters)
 
   const stats: FinancialStats = {
@@ -321,9 +328,8 @@ export async function getFinancialStats(filters?: PaymentFilters): Promise<Finan
     }
   })
 
-  stats.averagePayment = stats.totalPayments > 0 
-    ? stats.totalRevenue / payments.filter(p => p.status === 'paid').length 
-    : 0
+  const paidCount = payments.filter(p => p.status === 'paid').length
+  stats.averagePayment = paidCount > 0 ? stats.totalRevenue / paidCount : 0 // MODIFIQUEI AQUI - evita NaN
 
   return stats
 }

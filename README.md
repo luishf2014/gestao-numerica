@@ -160,101 +160,131 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 
 ---
 
-## 🔐 Segurança
+🔐 Segurança
+Camadas de Proteção
 
-🛡️ Camadas de Proteção
+Autenticação via Supabase Auth
 
-- Autenticação via Supabase Auth
-- JWT seguro
-- Controle de acesso por perfil
-- RLS no banco de dados
-- API Key do Asaas isolada em Edge Functions
-- Webhook com validação
-- Processamento idempotente
-- Transações seguras (pagamento + ativação)
+JWT seguro
 
----
+Controle de acesso por perfil (Admin / Usuário)
 
-## 📥 Instalação
+Row Level Security (RLS) no banco de dados
 
-### Pré-requisitos
-- Node.js 18+
-- Git
-- Conta Supabase
-- Conta Asaas (sandbox ou produção)
+API Key do Asaas isolada em Supabase Edge Functions
 
-### Passos
-```bash
-git clone <repo-url>
+Webhook com validação por token
+
+Processamento idempotente
+
+Transações seguras (pagamento + ativação)
+
+📥 Instalação
+Pré-requisitos
+
+Node.js 18+
+
+Git
+
+Conta no Supabase
+
+Conta no Asaas (sandbox ou produção)
+
+Passos
+# Clone o repositório
+git clone https://github.com/luishf2014/dezaqui.git
+
+# Acesse o frontend
 cd dezaqui/frontend
+
+# Instale as dependências
 npm install
+
+# Inicie o ambiente de desenvolvimento
 npm run dev
+
+
 A aplicação estará disponível em:
+
 http://localhost:3000
 
 📂 Estrutura do Projeto
 dezaqui/
-├── frontend/
+├── frontend/                # Aplicação Web (React + Vite)
 │   └── src/
-│       ├── pages/
-│       ├── services/
-│       ├── components/
-│       ├── contexts/
-│       └── lib/
-├── supabase/
-│   └── functions/
+│       ├── pages/           # Páginas da aplicação
+│       ├── services/        # Regras de negócio e integrações
+│       ├── components/      # Componentes reutilizáveis
+│       ├── contexts/        # Contextos React (Auth, etc)
+│       └── lib/             # Utilitários e clientes (Supabase)
+├── supabase/                # Backend serverless
+│   └── functions/           # Edge Functions
 │       ├── asaas-create-pix/
 │       ├── asaas-webhook/
 │       └── README.md
 ├── backend/
-│   └── migrations/
+│   └── migrations/          # Migrações SQL
 └── README.md
 
-📈 Roadmap
- Sistema de autenticação
+📈 Roadmap (Implementado)
 
- Participações e ranking
+✅ Sistema de autenticação
 
- Sorteios múltiplos
+✅ Participações e ranking
 
- Integração Pix
+✅ Sorteios múltiplos
 
- Painel administrativo
+✅ Integração Pix
 
- Relatórios financeiros
+✅ Painel administrativo
 
-IMPLEMENTAÇÕES FUTURAS
+✅ Relatórios financeiros
 
- Pagamento automático de prêmios
+🔮 Implementações Futuras
 
- Auditoria administrativa completa
+Pagamento automático de prêmios
 
- Configuração dinâmica de gateways
+Auditoria administrativa completa
 
- App mobile (React Native)
+Permitir que o administrador configure o gateway de pagamento
+
+Histórico completo de pagamentos
+
+App mobile (React Native)
 
 ⚠️ Aviso Legal
+
 Esta plataforma é fornecida exclusivamente como solução tecnológica.
-A responsabilidade legal, fiscal ou regulatória pelo uso em produção é do operador.
+
+Toda responsabilidade legal, fiscal ou regulatória referente ao uso em produção é integralmente do operador.
 
 👨‍💻 Autor
-<div align="center"> <img src="https://github.com/luishf2014.png" width="150" style="border-radius:50%;" />
-Luis Henrique
+<div align="center"> <img src="https://github.com/luishf2014.png" width="140" style="border-radius:50%;" /> <br /><br />
+
+<strong>Luis Henrique</strong><br />
 Desenvolvedor Full Stack
+
 Especializado em sistemas web, integrações financeiras e produtos escaláveis.
 
-GitHub •
-LinkedIn
+<br /><br />
+
+<a href="https://github.com/luishf2014">GitHub</a> •
+<a href="https://www.linkedin.com/in/luis-henrique-mt">LinkedIn</a>
 
 </div>
 📄 Licença
+
 Este projeto está sob a licença MIT.
-Você pode usar, copiar, modificar e distribuir livremente.
+
+Você pode usar, copiar, modificar e distribuir livremente, mantendo os créditos do autor.
 
 <div align="center">
+
 ⭐ Se este projeto foi útil, considere deixar uma estrela
 💬 Dúvidas ou sugestões? Abra uma issue
 
-Desenvolvido com foco em qualidade, segurança e produto real
+<br />
 
-</div> ```
+<strong>Desenvolvido com foco em qualidade, segurança e produto real.</strong>
+
+</div>

@@ -129,6 +129,7 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 - TypeScript
 - TailwindCSS
 - PWA
+```
 
 ## Backend & Database
 - Supabase (BaaS)

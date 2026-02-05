@@ -766,8 +766,8 @@ export default function AdminFinance() {
                     <option value="all">Todos</option>
                     <option value="paid">Pago</option>
                     <option value="pending">Pendente</option>
-                    <option value="cancelled">Cancelado</option>
-                    <option value="refunded">Reembolsado</option>
+                    {/* <option value="cancelled">Cancelado</option>
+                    <option value="refunded">Reembolsado</option> */}
                   </select>
                 </div>
 
@@ -784,7 +784,7 @@ export default function AdminFinance() {
                     <option value="all">Todos</option>
                     <option value="pix">Pix</option>
                     <option value="cash">Dinheiro</option>
-                    <option value="manual">Manual</option>
+                    {/* <option value="manual">Manual</option> */}
                   </select>
                 </div>
 

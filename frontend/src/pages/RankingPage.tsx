@@ -133,15 +133,13 @@ export default function RankingPage() {
 
   const drawnNumbersSorted = useMemo((): number[] => {
     const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
     const allNumbers = new Set<number>()
-    drawsToUse.forEach((draw) => {
+
     drawsToUse.forEach((draw) => {
       draw.numbers.forEach((num) => allNumbers.add(num))
     })
+
     return Array.from(allNumbers).sort((a, b) => a - b)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draws, selectedDrawId, drawsSortedAsc])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draws, selectedDrawId, drawsSortedAsc])
 
@@ -154,18 +152,11 @@ export default function RankingPage() {
   const getHitNumbersForParticipation = (participation: Participation): number[] => {
     const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
     return getAllHitNumbers(participation.numbers, drawsToUse)
-    const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
-    return getAllHitNumbers(participation.numbers, drawsToUse)
   }
 
   const maxScoreToDisplay = useMemo(() => {
     if (participations.length === 0) return 0
-    let max = 0
-    for (const p of participations) {
-      const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
-      if (s > max) max = s
-    }
-    return max
+
     let max = 0
     for (const p of participations) {
       const s = selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
@@ -250,7 +241,6 @@ export default function RankingPage() {
       hasAnyWinner,
     }
   }, [contest, participations, selectedDrawId, draws]) // draws entra por causa do score  
-
 
   if (loading) {
     return (
@@ -401,7 +391,8 @@ export default function RankingPage() {
                       <>
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.TOP.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.TOP.winnersCount} ganhador(es)</div>
-                        <div className="text-lg font-bold">R$ {Number(calcAmountPerWinner('TOP', drawWinnersByScore.TOP.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                        <div className="text-lg font-bold">
+                          R$ {Number(calcAmountPerWinner('TOP', drawWinnersByScore.TOP.winnersCount) || 0).toFixed(2).replace('.', ',')}
                         </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
@@ -424,7 +415,9 @@ export default function RankingPage() {
                       <>
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.SECOND.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.SECOND.winnersCount} ganhador(es)</div>
-                        <div className="text-lg font-bold">R$ {Number(calcAmountPerWinner('SECOND', drawWinnersByScore.SECOND.winnersCount) || 0).toFixed(2).replace('.', ',')}</div>
+                        <div className="text-lg font-bold">
+                          R$ {Number(calcAmountPerWinner('SECOND', drawWinnersByScore.SECOND.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                        </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
                     ) : (
@@ -446,7 +439,9 @@ export default function RankingPage() {
                       <>
                         <div className="text-2xl font-bold mb-1">{drawWinnersByScore.LOWEST.score} acertos</div>
                         <div className="text-sm mb-2">{drawWinnersByScore.LOWEST.winnersCount} ganhador(es)</div>
-                        <div className="text-lg font-bold">R$ {Number(calcAmountPerWinner('LOWEST', drawWinnersByScore.LOWEST.winnersCount) || 0).toFixed(2).replace('.', ',')}</div>
+                        <div className="text-lg font-bold">
+                          R$ {Number(calcAmountPerWinner('LOWEST', drawWinnersByScore.LOWEST.winnersCount) || 0).toFixed(2).replace('.', ',')}
+                        </div>
                         <div className="text-xs opacity-75 mt-1">por ganhador</div>
                       </>
                     ) : (
@@ -481,7 +476,7 @@ export default function RankingPage() {
                     </div>
                     <div>
                       <div className="font-semibold text-[#1F1F1F]">{formatDateTime(draw.draw_date)}</div>
-                      <div className="text-sm text-[#1F1F1F]/70">{draw.numbers.length} números sorteados</div>
+                      <div className="text-sm text-[#1F1FF]/70">{draw.numbers.length} números sorteados</div>
                     </div>
                   </div>
                   <div className="flex gap-2 flex-wrap justify-end">
@@ -620,8 +615,6 @@ export default function RankingPage() {
                 <tbody>
                   {(() => {
                     const sortedParticipations = [...participations].sort((a, b) => {
-                      const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
-                      const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
                       const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       if (scoreB !== scoreA) return scoreB - scoreA

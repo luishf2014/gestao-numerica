@@ -18,20 +18,20 @@
 [📈 Roadmap](#-roadmap) •
 [👨‍💻 Autor](#-autor)
 
----
-
 </div>
 
-> ## 🎉 ATUALIZAÇÕES IMPORTANTES
->
-> ✅ Integração completa com Pix (Asaas) via Edge Functions  
-> ✅ Finalização automática do concurso ao criar o primeiro sorteio  
-> ✅ Ranking em tempo real com medalhas por categoria  
-> ✅ Premiação automática baseada em percentuais configuráveis  
-> ✅ Suporte a múltiplos sorteios por concurso  
-> ✅ Relatórios profissionais (CSV, PDF e Excel)  
-> ✅ Ativação automática (Pix) e manual (dinheiro)  
-> ✅ Sistema de cupons e descontos no checkout  
+---
+
+## 🎉 Atualizações Importantes
+
+- ✅ Integração completa com Pix (Asaas) via Edge Functions  
+- ✅ Finalização automática do concurso ao criar o primeiro sorteio  
+- ✅ Ranking em tempo real com medalhas por categoria  
+- ✅ Premiação automática baseada em percentuais configuráveis  
+- ✅ Suporte a múltiplos sorteios por concurso  
+- ✅ Relatórios profissionais (CSV, PDF e Excel)  
+- ✅ Ativação automática (Pix) e manual (dinheiro)  
+- ✅ Sistema de cupons e descontos no checkout  
 
 ---
 
@@ -42,10 +42,11 @@ O **DezAqui** é uma plataforma **Web + PWA** desenvolvida para operar **concurs
 O sistema funciona como um **motor genérico de concursos**, permitindo que o administrador configure regras, valores, sorteios e percentuais sem necessidade de alterações no código.
 
 Projetado para cenários reais de produção, com foco em:
-- Confiabilidade
-- Rastreabilidade
-- Segurança financeira
-- Escalabilidade
+
+- Confiabilidade  
+- Rastreabilidade  
+- Segurança financeira  
+- Escalabilidade  
 
 ---
 
@@ -53,26 +54,23 @@ Projetado para cenários reais de produção, com foco em:
 
 Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plataforma:
 
-- ✅ Cadastro e autenticação de usuários
-- ✅ Participações com números manuais ou automáticos
-- ✅ Pagamentos Pix e dinheiro
-- ✅ Sorteios manuais ou automáticos
-- ✅ Ranking em tempo real
-- ✅ Premiação automática com rateio
-- ✅ Relatórios financeiros e operacionais
-- ✅ Painel administrativo completo
+- Cadastro e autenticação de usuários  
+- Participações com números manuais ou automáticos  
+- Pagamentos via Pix e dinheiro  
+- Sorteios manuais ou automáticos  
+- Ranking em tempo real  
+- Premiação automática com rateio  
+- Relatórios financeiros e operacionais  
+- Painel administrativo completo  
 
 ---
 
 ## ✨ Principais Funcionalidades
 
-<table>
-<tr>
-<td width="50%">
-
 ### 👤 Usuário Final
+
 - Cadastro e autenticação
-- CPF obrigatório para Pix
+- CPF obrigatório para pagamentos Pix
 - Escolha de números:
   - Manual
   - Automática (surpresinha)
@@ -83,15 +81,13 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 - Acompanhamento em tempo real:
   - Ranking
   - Números sorteados
-- Área **Meus Tickets**
+- Área **Meus Tickets**:
   - Código único
   - Status da participação
   - Resultado financeiro
 
-</td>
-<td width="50%">
-
 ### 🛠️ Administrador
+
 - CRUD completo de concursos
 - Configuração de regras:
   - Universo numérico
@@ -106,10 +102,6 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
   - Dinheiro (manual)
 - Financeiro e relatórios
 - Sistema de descontos
-
-</td>
-</tr>
-</table>
 
 ---
 
@@ -130,67 +122,56 @@ Eliminar a necessidade de múltiplos sistemas, centralizando em uma única plata
 ## 🚀 Stack Tecnológica
 
 ### Frontend
-├── React 18
-├── Vite
-├── TypeScript
-├── TailwindCSS
-└── PWA
 
+```text
+- React 18
+- Vite
+- TypeScript
+- TailwindCSS
+- PWA
 
-### Backend & Database
-├── Supabase (BaaS)
-├── PostgreSQL
-├── Row Level Security (RLS)
-├── Database Triggers
-└── Edge Functions
+## Backend & Database
+- Supabase (BaaS)
+- PostgreSQL
+- Row Level Security (RLS)
+- Database Triggers
+- Edge Functions
 
+## Pagamentos
+- Asaas (Pix)
+- QR Code dinâmico
+- Webhooks seguros
 
-### Pagamentos
-├── Asaas (Pix)
-├── QR Code dinâmico
-└── Webhooks seguros
+## DevOps & Tools
+- Git & GitHub
+- Supabase CLI
+- ESLint
+- Prettier
 
+----
 
-### DevOps & Tools
-├── Git & GitHub
-├── Supabase CLI
-├── ESLint
-└── Prettier
-
-
----
-
-🔐 Segurança
+## 🔐 Segurança
 Camadas de Proteção
+ - Autenticação via Supabase Auth
+ - JWT seguro
+ - Controle de acesso por perfil (Admin / Usuário)
+ - Row Level Security (RLS) no banco de dados
+ - API Key do Asaas isolada em Supabase Edge Functions
+ - Webhook com validação por token
+ - Processamento idempotente
+ - Transações seguras (pagamento + ativação)
 
-Autenticação via Supabase Auth
+----
 
-JWT seguro
+## 📥 Instalação
+  Pré-requisitos
+   - Node.js 18+
+   - Git
+   - Conta no Supabase
+   - Conta no Asaas (sandbox ou produção)
 
-Controle de acesso por perfil (Admin / Usuário)
+Passo a passo
 
-Row Level Security (RLS) no banco de dados
-
-API Key do Asaas isolada em Supabase Edge Functions
-
-Webhook com validação por token
-
-Processamento idempotente
-
-Transações seguras (pagamento + ativação)
-
-📥 Instalação
-Pré-requisitos
-
-Node.js 18+
-
-Git
-
-Conta no Supabase
-
-Conta no Asaas (sandbox ou produção)
-
-Passos
 # Clone o repositório
 git clone https://github.com/luishf2014/dezaqui.git
 
@@ -203,63 +184,59 @@ npm install
 # Inicie o ambiente de desenvolvimento
 npm run dev
 
-
 A aplicação estará disponível em:
+- http://localhost:3000
 
-http://localhost:3000
+## 📂 Estrutura do Projeto
 
-📂 Estrutura do Projeto
 dezaqui/
-├── frontend/                # Aplicação Web (React + Vite)
+├── frontend/                 # Aplicação Web (React + Vite)
 │   └── src/
-│       ├── pages/           # Páginas da aplicação
-│       ├── services/        # Regras de negócio e integrações
-│       ├── components/      # Componentes reutilizáveis
-│       ├── contexts/        # Contextos React (Auth, etc)
-│       └── lib/             # Utilitários e clientes (Supabase)
-├── supabase/                # Backend serverless
-│   └── functions/           # Edge Functions
-│       ├── asaas-create-pix/
-│       ├── asaas-webhook/
+│       ├── pages/            # Páginas da aplicação
+│       ├── services/         # Regras de negócio e integrações
+│       ├── components/       # Componentes reutilizáveis
+│       ├── contexts/         # Contextos React (Auth, etc)
+│       └── lib/              # Utilitários e clientes (Supabase)
+├── supabase/                 # Backend serverless
+│   └── functions/            # Edge Functions
+│       ├── asaas-create-pix/ # Criação de pagamentos Pix
+│       ├── asaas-webhook/    # Webhook de confirmação
 │       └── README.md
 ├── backend/
-│   └── migrations/          # Migrações SQL
+│   └── migrations/           # Migrações SQL
 └── README.md
 
-📈 Roadmap (Implementado)
+----
 
-✅ Sistema de autenticação
+##📈 Roadmap (Implementado)
+ - ✅ Sistema de autenticação
+ - ✅ Participações e ranking
+ - ✅ Sorteios múltiplos
+ - ✅ Integração Pix
+ - ✅ Painel administrativo
+ - ✅ Relatórios financeiros
 
-✅ Participações e ranking
+----
 
-✅ Sorteios múltiplos
+## 🔮 Implementações Futuras
+ - Pagamento automático de prêmios
+ - Auditoria administrativa completa
+ - Permitir que o administrador configure o gateway de pagamento
+ - Histórico completo de pagamentos
+ - App mobile (React Native)
 
-✅ Integração Pix
+----
 
-✅ Painel administrativo
-
-✅ Relatórios financeiros
-
-🔮 Implementações Futuras
-
-Pagamento automático de prêmios
-
-Auditoria administrativa completa
-
-Permitir que o administrador configure o gateway de pagamento
-
-Histórico completo de pagamentos
-
-App mobile (React Native)
-
-⚠️ Aviso Legal
-
+## ⚠️ Aviso Legal
 Esta plataforma é fornecida exclusivamente como solução tecnológica.
-
 Toda responsabilidade legal, fiscal ou regulatória referente ao uso em produção é integralmente do operador.
 
-👨‍💻 Autor
-<div align="center"> <img src="https://github.com/luishf2014.png" width="140" style="border-radius:50%;" /> <br /><br />
+----
+
+##👨‍💻 Autor
+<div align="center"> <img src="https://github.com/luishf2014.png" width="140" style="border-radius:50%;" />
+
+<br /><br />
 
 <strong>Luis Henrique</strong><br />
 Desenvolvedor Full Stack
@@ -272,11 +249,14 @@ Especializado em sistemas web, integrações financeiras e produtos escaláveis.
 <a href="https://www.linkedin.com/in/luis-henrique-mt">LinkedIn</a>
 
 </div>
-📄 Licença
 
+----
+
+## 📄 Licença
 Este projeto está sob a licença MIT.
-
 Você pode usar, copiar, modificar e distribuir livremente, mantendo os créditos do autor.
+
+----
 
 <div align="center">
 
@@ -287,4 +267,4 @@ Você pode usar, copiar, modificar e distribuir livremente, mantendo os crédito
 
 <strong>Desenvolvido com foco em qualidade, segurança e produto real.</strong>
 
-</div>
+</div> ```

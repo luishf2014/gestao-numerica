@@ -210,7 +210,7 @@ dezaqui/
 ```
 ---
 
-##📈 Roadmap (Implementado)
+## 📈 Roadmap (Implementado)
  - ✅ Sistema de autenticação
  - ✅ Participações e ranking
  - ✅ Sorteios múltiplos
@@ -235,20 +235,19 @@ Toda responsabilidade legal, fiscal ou regulatória referente ao uso em produç�
 
 ----
 
-##👨‍💻 Autor
-<div align="center"> <img src="https://github.com/luishf2014.png" width="140" style="border-radius:50%;" />
+## 👨‍💻 Autor
 
-<br /><br />
+<div align="center">
 
-<strong>Luis Henrique</strong><br />
-Desenvolvedor Full Stack
+<img src="https://github.com/luishf2014.png" width="150" style="border-radius: 50%;" alt="Luis Henrique"/>
 
-Especializado em sistemas web, integrações financeiras e produtos escaláveis.
+### **Luis Henrique**
 
-<br /><br />
+Desenvolvedor Full Stack apaixonado por criar soluções que fazem a diferença.
 
-<a href="https://github.com/luishf2014">GitHub</a> •
-<a href="https://www.linkedin.com/in/luis-henrique-mt">LinkedIn</a>
+[![GitHub](https://img.shields.io/badge/GitHub-luishf2014-181717?style=for-the-badge&logo=github)](https://github.com/luishf2014)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Luis_Henrique-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/luis-henrique-mt)
+[![Email](https://img.shields.io/badge/Email-Contato-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:luis-henrique_mt@hotmail.com.br)
 
 </div>
 

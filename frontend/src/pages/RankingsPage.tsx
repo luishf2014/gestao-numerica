@@ -1,12 +1,12 @@
 /**
  * Página de Rankings Gerais
  * FASE 2: Participações e Ranking
- * 
+ *
  * Exibe rankings de concursos, similar ao estilo de "Meus Tickets"
  * Admin: vê todos os concursos ativos
  * Usuário comum: vê apenas concursos onde está participando
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { listActiveContests, listFinishedContests, getContestById } from '../services/contestsService'
 import { getContestRanking, listMyParticipations } from '../services/participationsService'
@@ -14,7 +14,8 @@ import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
 import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
-import { getPayoutCategory, groupParticipationsByCategory, getCategoryLabel } from '../utils/payoutCategoryHelpers'
+// MODIFIQUEI AQUI - Removido payoutCategoryHelpers (agora é por SCORE)
+// import { getPayoutCategory, groupParticipationsByCategory, getCategoryLabel } from '../utils/payoutCategoryHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
 import Header from '../components/Header'
@@ -39,6 +40,9 @@ export default function RankingsPage() {
   const [draws, setDraws] = useState<Draw[]>([])
   const [payouts, setPayouts] = useState<Record<string, any>>({}) // participationId -> DrawPayout
   const [payoutSummary, setPayoutSummary] = useState<any>(null)
+  // MODIFIQUEI AQUI - permitir selecionar o sorteio do concurso
+  const [selectedDrawId, setSelectedDrawId] = useState<string>('')
+
   const [loading, setLoading] = useState(true)
   const [loadingRanking, setLoadingRanking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,17 +58,14 @@ export default function RankingsPage() {
 
         if (isAdmin) {
           // Admin: ver todos os concursos ativos e finalizados
-          const [activeData, finishedData] = await Promise.all([
-            listActiveContests(),
-            listFinishedContests(),
-          ])
+          const [activeData, finishedData] = await Promise.all([listActiveContests(), listFinishedContests()])
           setActiveContests(activeData)
           setFinishedContests(finishedData)
         } else if (user) {
           // Usuário comum: ver apenas concursos onde está participando (ativos + finalizados)
           const myParticipations = await listMyParticipations()
           // Extrair IDs únicos de concursos
-          const contestIds = [...new Set(myParticipations.map(p => p.contest_id).filter(Boolean))]
+          const contestIds = [...new Set(myParticipations.map((p) => p.contest_id).filter(Boolean))]
 
           // Buscar detalhes dos concursos
           const allContests = await Promise.all(
@@ -80,8 +81,8 @@ export default function RankingsPage() {
 
           const validContests = allContests.filter((c): c is Contest => c !== null)
           // Separar em ativos e finalizados
-          const active = validContests.filter(c => c.status === 'active')
-          const finished = validContests.filter(c => c.status === 'finished')
+          const active = validContests.filter((c) => c.status === 'active')
+          const finished = validContests.filter((c) => c.status === 'finished')
 
           setActiveContests(active)
           setFinishedContests(finished)
@@ -107,13 +108,15 @@ export default function RankingsPage() {
     setAvailableContests(currentContests)
 
     // Limpar seleção se o concurso selecionado não estiver na lista atual
-    if (selectedContestId && !currentContests.find(c => c.id === selectedContestId)) {
+    if (selectedContestId && !currentContests.find((c) => c.id === selectedContestId)) {
       setSelectedContestId('')
       setSelectedContest(null)
       setRanking([])
       setDraws([])
       setPayouts({})
       setPayoutSummary(null)
+      // MODIFIQUEI AQUI
+      setSelectedDrawId('')
     }
   }, [activeTab, activeContests, finishedContests, selectedContestId])
 
@@ -126,6 +129,8 @@ export default function RankingsPage() {
         setPayouts({})
         setPayoutSummary(null)
         setSelectedContest(null)
+        // MODIFIQUEI AQUI
+        setSelectedDrawId('')
         return
       }
 
@@ -143,22 +148,19 @@ export default function RankingsPage() {
         setSelectedContest(contest)
 
         // Buscar ranking, sorteios e payouts do concurso selecionado
-        const [rankingData, drawsData] = await Promise.all([
-          getContestRanking(selectedContestId),
-          listDrawsByContestId(selectedContestId),
-        ])
+        const [rankingData, drawsData] = await Promise.all([getContestRanking(selectedContestId), listDrawsByContestId(selectedContestId)])
 
         setRanking(rankingData)
         setDraws(drawsData)
 
-        // MODIFIQUEI AQUI - Buscar payouts do último sorteio se houver
+        // MODIFIQUEI AQUI - Buscar payouts do sorteio selecionado (default: último)
         if (drawsData.length > 0) {
-          const lastDraw = drawsData[0] // Já ordenado por data desc
+          // MODIFIQUEI AQUI - não forçar setState se já existe um selecionado válido
+          const defaultDrawId = selectedDrawId || drawsData[0].id // drawsData[0] é o mais recente
+          if (!selectedDrawId) setSelectedDrawId(defaultDrawId)
+
           try {
-            const [summary, drawPayouts] = await Promise.all([
-              getDrawPayoutSummary(lastDraw.id),
-              getPayoutsByDraw(lastDraw.id),
-            ])
+            const [summary, drawPayouts] = await Promise.all([getDrawPayoutSummary(defaultDrawId), getPayoutsByDraw(defaultDrawId)])
 
             setPayoutSummary(summary)
 
@@ -174,6 +176,7 @@ export default function RankingsPage() {
             setPayoutSummary(null)
           }
         } else {
+          setSelectedDrawId('')
           setPayouts({})
           setPayoutSummary(null)
         }
@@ -186,7 +189,7 @@ export default function RankingsPage() {
     }
 
     loadRanking()
-  }, [selectedContestId])
+  }, [selectedContestId, selectedDrawId]) // MODIFIQUEI AQUI - inclui selectedDrawId para recarregar payouts ao trocar sorteio
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -206,6 +209,62 @@ export default function RankingsPage() {
   // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios
   const getTotalScore = (participation: Participation, draws: Draw[]): number => {
     return calculateTotalScore(participation.numbers, draws)
+  }
+
+  // MODIFIQUEI AQUI - draws em ordem ASC para calcular score "até o sorteio" corretamente
+  const drawsSortedAsc = useMemo(() => {
+    return [...draws].sort((a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime())
+  }, [draws])
+
+  // MODIFIQUEI AQUI - pegar sorteios até o selecionado (inclusive)
+  const getDrawsUpTo = (drawId: string): Draw[] => {
+    const idx = drawsSortedAsc.findIndex((d) => d.id === drawId)
+    if (idx === -1) return drawsSortedAsc
+    return drawsSortedAsc.slice(0, idx + 1)
+  }
+
+  // MODIFIQUEI AQUI - score até o sorteio selecionado
+  const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
+    const drawsUpTo = getDrawsUpTo(drawId)
+    return calculateTotalScore(participation.numbers, drawsUpTo)
+  }
+
+  // MODIFIQUEI AQUI - score exibido baseado no sorteio selecionado
+  const getDisplayScore = (p: Participation): number => {
+    if (selectedDrawId) return getScoreUpToDraw(p, selectedDrawId)
+    return getTotalScore(p, draws)
+  }
+
+  // MODIFIQUEI AQUI - categoria por SCORE (TOP/SECOND/LOWEST) usando o escopo do sorteio selecionado
+  type ScoreCategory = 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
+
+  const scoresContext = useMemo(() => {
+    const N = Number(selectedContest?.numbers_per_participation || 0)
+    const topScore = Number.isFinite(N) && N > 0 ? N : null
+    const secondScore = Number.isFinite(N) && N > 1 ? N - 1 : null
+
+    const allScores = ranking.map((p) => getDisplayScore(p))
+    const positiveScores = allScores.filter(
+      (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
+    )
+    const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
+
+    const getCategoryByScore = (score: number): ScoreCategory => {
+      if (topScore !== null && score === topScore) return 'TOP'
+      if (secondScore !== null && score === secondScore) return 'SECOND'
+      if (lowestPositiveScore !== null && score === lowestPositiveScore) return 'LOWEST'
+      return 'NONE'
+    }
+
+    return { topScore, secondScore, lowestPositiveScore, getCategoryByScore }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedContest, ranking, selectedDrawId, draws, drawsSortedAsc])
+
+  const getMedalByCategory = (cat: ScoreCategory) => {
+    if (cat === 'TOP') return '🥇'
+    if (cat === 'SECOND') return '🥈'
+    if (cat === 'LOWEST') return '🥉'
+    return undefined
   }
 
   if (authLoading || loading) {
@@ -252,10 +311,7 @@ export default function RankingsPage() {
           <div className="text-center">
             <div className="text-red-600 text-xl mb-2">⚠️ Erro</div>
             <p className="text-[#1F1F1F]/70">{error}</p>
-            <Link
-              to="/contests"
-              className="mt-4 inline-block text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold"
-            >
+            <Link to="/contests" className="mt-4 inline-block text-[#1E7F43] hover:text-[#3CCB7F] underline font-semibold">
               Voltar para concursos
             </Link>
           </div>
@@ -277,17 +333,27 @@ export default function RankingsPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3 flex-wrap">
                 <div className="p-2 sm:p-3 bg-white/20 rounded-lg sm:rounded-xl">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 sm:h-6 sm:w-6 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                    />
                   </svg>
                 </div>
                 <span className="px-3 sm:px-4 py-1 bg-white/30 text-[#1F1F1F] rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap">
-                  ● {availableContests.length} {availableContests.length === 1 ? 'Concurso' : 'Concursos'} {isAdmin ? 'Disponíveis' : 'Participando'}
+                  ● {availableContests.length} {availableContests.length === 1 ? 'Concurso' : 'Concursos'}{' '}
+                  {isAdmin ? 'Disponíveis' : 'Participando'}
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#1F1F1F] mb-3">
-                🏆 Rankings
-              </h1>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#1F1F1F] mb-3">🏆 Rankings</h1>
               <p className="text-[#1F1F1F]/90 text-sm sm:text-base md:text-lg max-w-2xl">
                 {isAdmin
                   ? 'Visualize os rankings de todos os concursos ativos e veja quem está na liderança'
@@ -304,9 +370,7 @@ export default function RankingsPage() {
           <button
             onClick={() => setActiveTab('active')}
             className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-              activeTab === 'active'
-                ? 'bg-[#1E7F43] text-white shadow-md'
-                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+              activeTab === 'active' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
             }`}
           >
             Ativos ({activeContests.length})
@@ -314,9 +378,7 @@ export default function RankingsPage() {
           <button
             onClick={() => setActiveTab('history')}
             className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-              activeTab === 'history'
-                ? 'bg-[#1E7F43] text-white shadow-md'
-                : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+              activeTab === 'history' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
             }`}
           >
             Histórico ({finishedContests.length})
@@ -341,25 +403,30 @@ export default function RankingsPage() {
             <select
               id="contest-select"
               value={selectedContestId}
-              onChange={(e) => setSelectedContestId(e.target.value)}
+              onChange={(e) => {
+                setSelectedContestId(e.target.value)
+                // MODIFIQUEI AQUI - resetar sorteio ao trocar concurso
+                setSelectedDrawId('')
+              }}
               className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-sm sm:text-base font-semibold bg-white"
             >
               <option value="">-- Selecione um concurso --</option>
               {availableContests.map((contest) => (
                 <option key={contest.id} value={contest.id}>
-                  {contest.name} {contest.status === 'active' ? '(Ativo)' : contest.status === 'finished' ? '(Finalizado)' : ''}
+                  {contest.name}{' '}
+                  {contest.status === 'active' ? '(Ativo)' : contest.status === 'finished' ? '(Finalizado)' : ''}
                 </option>
               ))}
             </select>
             {availableContests.length === 0 && (
               <p className="mt-3 text-sm text-[#1F1F1F]/60">
                 {activeTab === 'active'
-                  ? (isAdmin
-                      ? 'Nenhum concurso ativo no momento.'
-                      : 'Você ainda não está participando de nenhum concurso ativo.')
-                  : (isAdmin
-                      ? 'Nenhum concurso finalizado ainda.'
-                      : 'Você ainda não participou de nenhum concurso finalizado.')}
+                  ? isAdmin
+                    ? 'Nenhum concurso ativo no momento.'
+                    : 'Você ainda não está participando de nenhum concurso ativo.'
+                  : isAdmin
+                  ? 'Nenhum concurso finalizado ainda.'
+                  : 'Você ainda não participou de nenhum concurso finalizado.'}
               </p>
             )}
           </div>
@@ -369,13 +436,22 @@ export default function RankingsPage() {
         {!selectedContestId ? (
           <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-8 sm:p-12 text-center shadow-xl">
             <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-[#F9F9F9] rounded-full mb-3 sm:mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-[#E5E5E5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6 sm:h-8 sm:w-8 text-[#E5E5E5]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                />
               </svg>
             </div>
-            <p className="text-[#1F1F1F]/70 text-base sm:text-lg mb-2 px-4">
-              Selecione um concurso acima para visualizar o ranking.
-            </p>
+            <p className="text-[#1F1F1F]/70 text-base sm:text-lg mb-2 px-4">Selecione um concurso acima para visualizar o ranking.</p>
           </div>
         ) : loadingRanking ? (
           <div className="rounded-2xl sm:rounded-3xl border border-[#E5E5E5] bg-white p-8 sm:p-12 text-center shadow-xl">
@@ -384,18 +460,12 @@ export default function RankingsPage() {
           </div>
         ) : selectedContest ? (
           <div className="space-y-4 sm:space-y-6">
-            <div
-              className="rounded-2xl sm:rounded-3xl border-2 border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl hover:shadow-2xl hover:border-[#F4C430] transition-all"
-            >
+            <div className="rounded-2xl sm:rounded-3xl border-2 border-[#E5E5E5] bg-white p-4 sm:p-6 shadow-xl hover:shadow-2xl hover:border-[#F4C430] transition-all">
               {/* Header do Concurso */}
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3 flex-wrap">
-                    <ContestStatusBadge
-                      contest={selectedContest}
-                      hasDraws={draws.length > 0}
-                      variant="card"
-                    />
+                    <ContestStatusBadge contest={selectedContest} hasDraws={draws.length > 0} variant="card" />
                     <span className="px-2 sm:px-3 py-1 bg-[#F4C430]/20 text-[#1F1F1F] rounded-full text-xs font-semibold whitespace-nowrap">
                       {ranking.length} {ranking.length === 1 ? 'Participante' : 'Participantes'}
                     </span>
@@ -405,9 +475,7 @@ export default function RankingsPage() {
                       </span>
                     )}
                   </div>
-                  <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">
-                    {selectedContest.name}
-                  </h3>
+                  <h3 className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#1F1F1F] mb-2 break-words">{selectedContest.name}</h3>
                   {/* MODIFIQUEI AQUI - Exibir código do concurso */}
                   {selectedContest.contest_code && (
                     <div className="mb-2">
@@ -417,9 +485,7 @@ export default function RankingsPage() {
                     </div>
                   )}
                   {selectedContest.description && (
-                    <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2 mb-2">
-                      {selectedContest.description}
-                    </p>
+                    <p className="text-[#1F1F1F]/70 text-xs sm:text-sm line-clamp-2 mb-2">{selectedContest.description}</p>
                   )}
                   <p className="text-[#1F1F1F]/50 text-xs sm:text-sm">
                     {selectedContest.status === 'finished'
@@ -443,14 +509,33 @@ export default function RankingsPage() {
                 </div>
               </div>
 
+              {/* MODIFIQUEI AQUI - Seletor de Sorteio */}
+              {draws.length > 0 && (
+                <div className="mb-4">
+                  <div className="rounded-xl border border-[#E5E5E5] bg-white p-4">
+                    <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Selecione o Sorteio:</label>
+                    <select
+                      value={selectedDrawId}
+                      onChange={(e) => setSelectedDrawId(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-sm font-semibold bg-white"
+                    >
+                      <option value="">Todos os sorteios (pontuação total)</option>
+                      {draws.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {formatDate(d.draw_date)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {/* MODIFIQUEI AQUI - Mensagem correta quando ainda não houve sorteio */}
               {ranking.length > 0 && draws.length === 0 && (
                 <div className="rounded-xl sm:rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-4">
                   <div className="text-center">
                     <div className="text-3xl mb-2">⏳</div>
-                    <h4 className="text-base sm:text-lg font-bold text-blue-900 mb-2">
-                      Aguardando sorteio
-                    </h4>
+                    <h4 className="text-base sm:text-lg font-bold text-blue-900 mb-2">Aguardando sorteio</h4>
                     <p className="text-blue-800 text-xs sm:text-sm">
                       Ainda não há sorteios realizados. A classificação abaixo mostra os participantes (pontuação 0 até o primeiro sorteio).
                     </p>
@@ -459,148 +544,198 @@ export default function RankingsPage() {
               )}
 
               {/* Top 3 Podium */}
-              {ranking.length > 0 && draws.length > 0 && (() => {
-                // MODIFIQUEI AQUI - Agrupar participantes por categoria de premiação
-                const grouped = groupParticipationsByCategory(payouts)
-                const isFinished = selectedContest.status === 'finished'
+              {ranking.length > 0 &&
+                draws.length > 0 &&
+                (() => {
+                  const isFinished = selectedContest.status === 'finished'
 
-                // MODIFIQUEI AQUI - Se não há participantes premiados, mostrar mensagem neutra
-                const hasPremiados = grouped.TOP.length > 0 || grouped.SECOND.length > 0 || grouped.LOWEST.length > 0
-                if (!hasPremiados) {
+                  // MODIFIQUEI AQUI - winners por SCORE usando o escopo do sorteio selecionado
+                  const scoreOf = (p: ParticipationWithUser) => getDisplayScore(p)
+
+                  const topWinners = ranking.filter((p) => scoresContext.topScore !== null && scoreOf(p) === scoresContext.topScore)
+                  const secondWinners = ranking.filter(
+                    (p) => scoresContext.secondScore !== null && scoreOf(p) === scoresContext.secondScore
+                  )
+
+                  const allScores = ranking.map((p) => scoreOf(p))
+                  const positiveScores = allScores.filter(
+                    (s) =>
+                      s > 0 &&
+                      (scoresContext.topScore === null || s !== scoresContext.topScore) &&
+                      (scoresContext.secondScore === null || s !== scoresContext.secondScore)
+                  )
+                  const lowestScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
+                  const lowestWinners = ranking.filter((p) => lowestScore !== null && scoreOf(p) === lowestScore)
+
+                  // MODIFIQUEI AQUI - mensagem neutra baseada em existência de premiados por SCORE
+                  const hasPremiados = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
+
+                  if (!hasPremiados) {
+                    return (
+                      <div className="rounded-xl sm:rounded-2xl border-2 border-yellow-200 bg-yellow-50 p-4 sm:p-6 mb-4">
+                        <div className="text-center">
+                          <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full mb-3 sm:mb-4">
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                              />
+                            </svg>
+                          </div>
+                          <h4 className="text-base sm:text-lg font-bold text-yellow-900 mb-2">
+                            Ainda não há pontuação suficiente para exibir o Top 3.
+                          </h4>
+                          <p className="text-yellow-800 text-xs sm:text-sm">
+                            {isFinished ? 'O ranking abaixo mostra a classificação final dos participantes.' : 'O ranking abaixo mostra a classificação dos participantes.'}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   return (
-                    <div className="rounded-xl sm:rounded-2xl border-2 border-yellow-200 bg-yellow-50 p-4 sm:p-6 mb-4">
-                      <div className="text-center">
-                        <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full mb-3 sm:mb-4">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-gradient-to-br from-[#F9F9F9] to-white p-4 sm:p-6 mb-4">
+                      <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                        <div className="p-1.5 sm:p-2 bg-[#F4C430]/10 rounded-lg">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4 sm:h-5 sm:w-5 text-[#F4C430]"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                            />
                           </svg>
                         </div>
-                        <h4 className="text-base sm:text-lg font-bold text-yellow-900 mb-2">
-                          Ainda não há pontuação suficiente para exibir o Top 3.
-                        </h4>
-                        <p className="text-yellow-800 text-xs sm:text-sm">
-                          {isFinished
-                            ? 'O ranking abaixo mostra a classificação final dos participantes.'
-                            : 'O ranking abaixo mostra a classificação dos participantes.'}
-                        </p>
+                        <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Top 3</h4>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                        {/* SECOND */}
+                        {secondWinners.length > 0 && (
+                          <div className="order-2 sm:order-1 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-gray-50 to-white p-3 sm:p-4 text-center">
+                            <div className="text-2xl sm:text-3xl mb-2">🥈</div>
+                            <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">SEGUNDA MAIOR</div>
+                            {secondWinners.map((participation, idx) => {
+                              const score = scoreOf(participation)
+                              return (
+                                <div
+                                  key={participation.id}
+                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                                >
+                                  <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                    {participation.user?.name || 'Anônimo'}
+                                  </div>
+                                  <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* TOP */}
+                        {topWinners.length > 0 && (
+                          <div className="order-1 sm:order-2 rounded-lg sm:rounded-xl border-2 border-[#F4C430] bg-gradient-to-br from-[#F4C430]/20 to-[#FFD700]/20 p-3 sm:p-4 text-center transform sm:-translate-y-2">
+                            <div className="text-3xl sm:text-4xl mb-2">🥇</div>
+                            <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">MAIOR PONTUAÇÃO</div>
+                            {topWinners.map((participation, idx) => {
+                              const score = scoreOf(participation)
+                              return (
+                                <div
+                                  key={participation.id}
+                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                                >
+                                  <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
+                                    {participation.user?.name || 'Anônimo'}
+                                  </div>
+                                  <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* LOWEST */}
+                        {lowestWinners.length > 0 && (
+                          <div className="order-3 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-orange-50 to-white p-3 sm:p-4 text-center">
+                            <div className="text-2xl sm:text-3xl mb-2">🥉</div>
+                            <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">MENOR PONTUAÇÃO</div>
+                            {lowestWinners.map((participation, idx) => {
+                              const score = scoreOf(participation)
+                              return (
+                                <div
+                                  key={participation.id}
+                                  className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}
+                                >
+                                  <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
+                                    {participation.user?.name || 'Anônimo'}
+                                  </div>
+                                  <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">{score} pts</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
-                }
-
-                // MODIFIQUEI AQUI - Buscar participações premiadas para exibir no pódio
-                const topParticipations = grouped.TOP.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
-                const secondParticipations = grouped.SECOND.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
-                const lowestParticipations = grouped.LOWEST.map(p => ranking.find(r => r.id === p.participationId)).filter(Boolean) as ParticipationWithUser[]
-
-                return (
-                  <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-gradient-to-br from-[#F9F9F9] to-white p-4 sm:p-6 mb-4">
-                    <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-                      <div className="p-1.5 sm:p-2 bg-[#F4C430]/10 rounded-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                        </svg>
-                      </div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">
-                        Top 3
-                      </h4>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                      {/* SECOND */}
-                      {secondParticipations.length > 0 && (
-                        <div className="order-2 sm:order-1 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-gray-50 to-white p-3 sm:p-4 text-center">
-                          <div className="text-2xl sm:text-3xl mb-2">🥈</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('SECOND')}</div>
-                          {secondParticipations.map((participation, idx) => {
-                            const payout = payouts[participation.id]
-                            return (
-                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
-                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
-                                  {participation.user?.name || 'Anônimo'}
-                                </div>
-                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                                  {payout?.score || getTotalScore(participation, draws)} pts
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {/* TOP */}
-                      {topParticipations.length > 0 && (
-                        <div className="order-1 sm:order-2 rounded-lg sm:rounded-xl border-2 border-[#F4C430] bg-gradient-to-br from-[#F4C430]/20 to-[#FFD700]/20 p-3 sm:p-4 text-center transform sm:-translate-y-2">
-                          <div className="text-3xl sm:text-4xl mb-2">🥇</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('TOP')}</div>
-                          {topParticipations.map((participation, idx) => {
-                            const payout = payouts[participation.id]
-                            return (
-                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
-                                <div className="text-base sm:text-lg font-bold text-[#1F1F1F] mb-1 truncate">
-                                  {participation.user?.name || 'Anônimo'}
-                                </div>
-                                <div className="text-xl sm:text-2xl font-extrabold text-[#1F1F1F]">
-                                  {payout?.score || getTotalScore(participation, draws)} pts
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {/* LOWEST */}
-                      {lowestParticipations.length > 0 && (
-                        <div className="order-3 rounded-lg sm:rounded-xl border-2 border-[#E5E5E5] bg-gradient-to-br from-orange-50 to-white p-3 sm:p-4 text-center">
-                          <div className="text-2xl sm:text-3xl mb-2">🥉</div>
-                          <div className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 mb-1">{getCategoryLabel('LOWEST')}</div>
-                          {lowestParticipations.map((participation, idx) => {
-                            const payout = payouts[participation.id]
-                            return (
-                              <div key={participation.id} className={idx > 0 ? 'mt-2 pt-2 border-t border-[#E5E5E5]' : ''}>
-                                <div className="text-sm sm:text-base font-bold text-[#1F1F1F] mb-1 truncate">
-                                  {participation.user?.name || 'Anônimo'}
-                                </div>
-                                <div className="text-lg sm:text-xl font-extrabold text-[#1F1F1F]">
-                                  {payout?.score || getTotalScore(participation, draws)} pts
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
+                })()}
 
               {/* Lista de Participantes (Top 10) */}
               {ranking.length > 0 && (
                 <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9] p-4 sm:p-6">
                   <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                     <div className="p-1.5 sm:p-2 bg-[#1E7F43]/10 rounded-lg">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4 sm:h-5 sm:w-5 text-[#1E7F43]"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                        />
                       </svg>
                     </div>
-                    <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">
-                      Classificação Completa
-                    </h4>
+                    <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Classificação Completa</h4>
                   </div>
+
                   <div className="space-y-2">
                     {(() => {
-                      // MODIFIQUEI AQUI - Ordenar por pontuação e usar categorias de premiação
+                      // MODIFIQUEI AQUI - Ordenar por pontuação com base no sorteio selecionado (ou total)
                       const sortedRanking = [...ranking].sort((a, b) => {
-                        const scoreA = getTotalScore(a, draws)
-                        const scoreB = getTotalScore(b, draws)
+                        const scoreA = getDisplayScore(a)
+                        const scoreB = getDisplayScore(b)
                         if (scoreB !== scoreA) return scoreB - scoreA
                         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                       })
+
                       return sortedRanking.slice(0, 10).map((participation, index) => {
                         const position = index + 1
-                        const hitNumbers = getHitNumbersForParticipation(participation, draws)
-                        const totalScore = getTotalScore(participation, draws)
-                        const payout = payouts[participation.id]
-                        const { medal } = getPayoutCategory(payout)
+                        const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+                        const hitNumbers = getHitNumbersForParticipation(participation, drawsToUse)
+                        const totalScore = getDisplayScore(participation)
+
+                        // MODIFIQUEI AQUI - medalha/faixa amarela igual ao trecho que você mandou (por SCORE)
+                        const cat = scoresContext.getCategoryByScore(totalScore)
+                        const medal = getMedalByCategory(cat)
                         const hasMedal = medal !== undefined
 
                         return (
@@ -617,34 +752,28 @@ export default function RankingsPage() {
                                 {medal ? (
                                   <span className="text-xl sm:text-2xl">{medal}</span>
                                 ) : (
-                                  <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">
-                                    #{position}
-                                  </span>
+                                  <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">#{position}</span>
                                 )}
                               </div>
+
                               <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-[#1F1F1F] truncate">
-                                  {participation.user?.name || 'Usuário Anônimo'}
-                                </div>
+                                <div className="font-semibold text-[#1F1F1F] truncate">{participation.user?.name || 'Usuário Anônimo'}</div>
                                 {participation.user?.email && (
-                                  <div className="text-xs text-[#1F1F1F]/60 truncate">
-                                    {participation.user.email}
-                                  </div>
+                                  <div className="text-xs text-[#1F1F1F]/60 truncate">{participation.user.email}</div>
                                 )}
                               </div>
+
                               {hitNumbers.length > 0 && (
                                 <div className="hidden sm:flex gap-1 flex-wrap pr-2">
                                   {hitNumbers.map((num) => (
-                                    <span
-                                      key={num}
-                                      className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold"
-                                    >
+                                    <span key={num} className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold">
                                       {num.toString().padStart(2, '0')}✓
                                     </span>
                                   ))}
                                 </div>
                               )}
                             </div>
+
                             <div className="flex items-center gap-3 flex-shrink-0">
                               <span
                                 className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
@@ -660,6 +789,7 @@ export default function RankingsPage() {
                         )
                       })
                     })()}
+
                     {ranking.length > 10 && (
                       <div className="text-center pt-2">
                         <Link
@@ -678,15 +808,14 @@ export default function RankingsPage() {
               {ranking.length === 0 && (
                 <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9] p-6 sm:p-8 text-center">
                   <div className="text-4xl mb-2">📊</div>
-                  <p className="text-[#1F1F1F]/70 text-sm sm:text-base">
-                    Ainda não há participantes neste concurso.
-                  </p>
+                  <p className="text-[#1F1F1F]/70 text-sm sm:text-base">Ainda não há participantes neste concurso.</p>
                 </div>
               )}
             </div>
           </div>
         ) : null}
       </div>
+
       <Footer />
     </div>
   )

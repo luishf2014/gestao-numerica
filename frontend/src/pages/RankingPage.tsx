@@ -220,7 +220,7 @@ export default function RankingPage() {
     const getValidDrawsFor = (p: ParticipationWithUser) => {
       const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
       const participationDate = new Date(p.created_at)
-      return drawsToUse.filter(d => new Date(d.draw_date) > participationDate)
+      return drawsToUse.filter(d => new Date(d.draw_date) >= participationDate)
     }
 
     // TOP: quem acertou TODOS os números em algum sorteio válido

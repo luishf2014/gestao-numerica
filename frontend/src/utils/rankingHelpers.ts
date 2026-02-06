@@ -56,7 +56,7 @@ export function filterValidDraws<T extends { numbers: number[]; draw_date: strin
   participationCreatedAt: string
 ): T[] {
   const participationDate = new Date(participationCreatedAt)
-  return draws.filter(draw => new Date(draw.draw_date) > participationDate)
+  return draws.filter(draw => new Date(draw.draw_date) >= participationDate)
 }
 
 /**
@@ -80,7 +80,7 @@ export function calculateTotalScore(
 
   // ANTI-FRAUDE: Se tiver data da participação, só conta sorteios após ela
   const validDraws = participationCreatedAt
-    ? draws.filter(d => d.draw_date && new Date(d.draw_date) > new Date(participationCreatedAt))
+    ? draws.filter(d => d.draw_date && new Date(d.draw_date) >= new Date(participationCreatedAt))
     : draws
 
   let totalScore = 0
@@ -113,7 +113,7 @@ export function getAllHitNumbers(
 
   // ANTI-FRAUDE: Se tiver data da participação, só conta sorteios após ela
   const validDraws = participationCreatedAt
-    ? draws.filter(d => d.draw_date && new Date(d.draw_date) > new Date(participationCreatedAt))
+    ? draws.filter(d => d.draw_date && new Date(d.draw_date) >= new Date(participationCreatedAt))
     : draws
 
   const allHitNumbers = new Set<number>()
@@ -162,7 +162,7 @@ export function hasAchievedTop(
 
   // ANTI-FRAUDE: Se tiver data da participação, só considera sorteios após ela
   const validDraws = participationCreatedAt
-    ? draws.filter(d => d.draw_date && new Date(d.draw_date) > new Date(participationCreatedAt))
+    ? draws.filter(d => d.draw_date && new Date(d.draw_date) >= new Date(participationCreatedAt))
     : draws
 
   return validDraws.some(draw => hasHitAllInDraw(participationNumbers, draw.numbers))
@@ -189,7 +189,7 @@ export function hasAchievedSecond(
 
   // ANTI-FRAUDE: Se tiver data da participação, só considera sorteios após ela
   const validDraws = participationCreatedAt
-    ? draws.filter(d => d.draw_date && new Date(d.draw_date) > new Date(participationCreatedAt))
+    ? draws.filter(d => d.draw_date && new Date(d.draw_date) >= new Date(participationCreatedAt))
     : draws
 
   const targetHits = participationNumbers.length - 1
@@ -217,7 +217,7 @@ export function getMaxHitsInSingleDraw(
 
   // ANTI-FRAUDE: Se tiver data da participação, só considera sorteios após ela
   const validDraws = participationCreatedAt
-    ? draws.filter(d => d.draw_date && new Date(d.draw_date) > new Date(participationCreatedAt))
+    ? draws.filter(d => d.draw_date && new Date(d.draw_date) >= new Date(participationCreatedAt))
     : draws
 
   if (validDraws.length === 0) return 0

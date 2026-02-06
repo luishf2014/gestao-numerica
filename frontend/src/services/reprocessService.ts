@@ -111,7 +111,7 @@ export async function reprocessContestAfterDraw(contestId: string): Promise<void
       const hasTopWinner = participations.some((p: any) => {
         const participationDate = new Date(p.created_at)
         // Filtrar sorteios válidos (após a participação - anti-fraude)
-        const validDraws = draws.filter(d => new Date(d.draw_date) > participationDate)
+        const validDraws = draws.filter(d => new Date(d.draw_date) >= participationDate)
         // Verificar se acertou todos em algum sorteio
         return validDraws.some(draw => {
           const drawSet = new Set(draw.numbers)

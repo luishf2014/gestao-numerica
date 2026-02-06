@@ -13,7 +13,7 @@ import { getContestRanking, listMyParticipations } from '../services/participati
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
+import { calculateTotalScore, getAllHitNumbers, calculateHits } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Removido payoutCategoryHelpers (agora é por SCORE)
 // import { getPayoutCategory, groupParticipationsByCategory, getCategoryLabel } from '../utils/payoutCategoryHelpers'
 import { useAuth } from '../contexts/AuthContext'
@@ -206,9 +206,9 @@ export default function RankingsPage() {
     return getAllHitNumbers(participation.numbers, draws)
   }
 
-  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios
+  // MODIFIQUEI AQUI - Calcular pontuação total baseada em todos os sorteios (anti-fraude)
   const getTotalScore = (participation: Participation, draws: Draw[]): number => {
-    return calculateTotalScore(participation.numbers, draws)
+    return calculateTotalScore(participation.numbers, draws, participation.created_at)
   }
 
   // MODIFIQUEI AQUI - draws em ordem ASC para calcular score "até o sorteio" corretamente
@@ -223,10 +223,10 @@ export default function RankingsPage() {
     return drawsSortedAsc.slice(0, idx + 1)
   }
 
-  // MODIFIQUEI AQUI - score até o sorteio selecionado
+  // MODIFIQUEI AQUI - score até o sorteio selecionado (anti-fraude)
   const getScoreUpToDraw = (participation: Participation, drawId: string): number => {
     const drawsUpTo = getDrawsUpTo(drawId)
-    return calculateTotalScore(participation.numbers, drawsUpTo)
+    return calculateTotalScore(participation.numbers, drawsUpTo, participation.created_at)
   }
 
   // MODIFIQUEI AQUI - score exibido baseado no sorteio selecionado
@@ -235,35 +235,65 @@ export default function RankingsPage() {
     return getTotalScore(p, draws)
   }
 
-  // MODIFIQUEI AQUI - categoria por SCORE (TOP/SECOND/LOWEST) usando o escopo do sorteio selecionado
-  type ScoreCategory = 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
-
-  const scoresContext = useMemo(() => {
+  // MODIFIQUEI AQUI - TOP/SECOND agora é por acertos em UM ÚNICO SORTEIO (não cumulativo)
+  // TOP = acertou TODOS os números em algum sorteio
+  // SECOND = acertou N-1 em algum sorteio (e não é TOP)
+  // LOWEST = menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
+  const drawWinnersByScore = useMemo(() => {
     const N = Number(selectedContest?.numbers_per_participation || 0)
-    const topScore = Number.isFinite(N) && N > 0 ? N : null
-    const secondScore = Number.isFinite(N) && N > 1 ? N - 1 : null
 
-    const allScores = ranking.map((p) => getDisplayScore(p))
-    const positiveScores = allScores.filter(
-      (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
-    )
-    const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
-
-    const getCategoryByScore = (score: number): ScoreCategory => {
-      if (topScore !== null && score === topScore) return 'TOP'
-      if (secondScore !== null && score === secondScore) return 'SECOND'
-      if (lowestPositiveScore !== null && score === lowestPositiveScore) return 'LOWEST'
-      return 'NONE'
+    // Função para obter sorteios válidos para uma participação (anti-fraude)
+    const getValidDrawsFor = (p: ParticipationWithUser) => {
+      const drawsToUse = selectedDrawId ? getDrawsUpTo(selectedDrawId) : draws
+      const participationDate = new Date(p.created_at)
+      return drawsToUse.filter(d => new Date(d.draw_date) >= participationDate)
     }
 
-    return { topScore, secondScore, lowestPositiveScore, getCategoryByScore }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // TOP: quem acertou TODOS os números em algum sorteio válido
+    const topWinners = ranking.filter(p => {
+      const validDraws = getValidDrawsFor(p)
+      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === p.numbers.length)
+    })
+    const topWinnerIds = new Set(topWinners.map(t => t.id))
+
+    // SECOND: quem acertou N-1 em algum sorteio válido (e NÃO é TOP)
+    const secondWinners = ranking.filter(p => {
+      if (topWinnerIds.has(p.id)) return false
+      const validDraws = getValidDrawsFor(p)
+      const targetHits = p.numbers.length - 1
+      return validDraws.some(draw => calculateHits(draw.numbers, p.numbers) === targetHits)
+    })
+    const secondWinnerIds = new Set(secondWinners.map(s => s.id))
+
+    // LOWEST: menor pontuação CUMULATIVA positiva (excluindo TOP e SECOND)
+    const scoreOf = (p: ParticipationWithUser) => getDisplayScore(p)
+
+    const othersWithScore = ranking.filter(
+      p => !topWinnerIds.has(p.id) && !secondWinnerIds.has(p.id) && scoreOf(p) > 0
+    )
+    const lowestPositiveScore = othersWithScore.length > 0
+      ? Math.min(...othersWithScore.map(p => scoreOf(p)))
+      : null
+
+    const lowestWinners = lowestPositiveScore !== null
+      ? othersWithScore.filter(p => scoreOf(p) === lowestPositiveScore)
+      : []
+
+    const hasAnyWinner = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
+
+    return {
+      TOP: { score: N, winnersCount: topWinners.length, winnerIds: topWinnerIds },
+      SECOND: { score: N - 1, winnersCount: secondWinners.length, winnerIds: secondWinnerIds },
+      LOWEST: { score: lowestPositiveScore, winnersCount: lowestWinners.length, winnerIds: new Set(lowestWinners.map(l => l.id)) },
+      hasAnyWinner,
+    }
   }, [selectedContest, ranking, selectedDrawId, draws, drawsSortedAsc])
 
-  const getMedalByCategory = (cat: ScoreCategory) => {
-    if (cat === 'TOP') return '🥇'
-    if (cat === 'SECOND') return '🥈'
-    if (cat === 'LOWEST') return '🥉'
+  // MODIFIQUEI AQUI - função para obter medalha baseada no ID da participação
+  const getMedalForParticipation = (participationId: string) => {
+    if (drawWinnersByScore.TOP.winnerIds.has(participationId)) return '🥇'
+    if (drawWinnersByScore.SECOND.winnerIds.has(participationId)) return '🥈'
+    if (drawWinnersByScore.LOWEST.winnerIds.has(participationId)) return '🥉'
     return undefined
   }
 
@@ -549,26 +579,15 @@ export default function RankingsPage() {
                 (() => {
                   const isFinished = selectedContest.status === 'finished'
 
-                  // MODIFIQUEI AQUI - winners por SCORE usando o escopo do sorteio selecionado
+                  // MODIFIQUEI AQUI - winners usando drawWinnersByScore (por sorteio individual)
                   const scoreOf = (p: ParticipationWithUser) => getDisplayScore(p)
 
-                  const topWinners = ranking.filter((p) => scoresContext.topScore !== null && scoreOf(p) === scoresContext.topScore)
-                  const secondWinners = ranking.filter(
-                    (p) => scoresContext.secondScore !== null && scoreOf(p) === scoresContext.secondScore
-                  )
+                  const topWinners = ranking.filter(p => drawWinnersByScore.TOP.winnerIds.has(p.id))
+                  const secondWinners = ranking.filter(p => drawWinnersByScore.SECOND.winnerIds.has(p.id))
+                  const lowestWinners = ranking.filter(p => drawWinnersByScore.LOWEST.winnerIds.has(p.id))
 
-                  const allScores = ranking.map((p) => scoreOf(p))
-                  const positiveScores = allScores.filter(
-                    (s) =>
-                      s > 0 &&
-                      (scoresContext.topScore === null || s !== scoresContext.topScore) &&
-                      (scoresContext.secondScore === null || s !== scoresContext.secondScore)
-                  )
-                  const lowestScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
-                  const lowestWinners = ranking.filter((p) => lowestScore !== null && scoreOf(p) === lowestScore)
-
-                  // MODIFIQUEI AQUI - mensagem neutra baseada em existência de premiados por SCORE
-                  const hasPremiados = topWinners.length > 0 || secondWinners.length > 0 || lowestWinners.length > 0
+                  // MODIFIQUEI AQUI - mensagem neutra baseada em existência de premiados
+                  const hasPremiados = drawWinnersByScore.hasAnyWinner
 
                   if (!hasPremiados) {
                     return (
@@ -733,9 +752,8 @@ export default function RankingsPage() {
                         const hitNumbers = getHitNumbersForParticipation(participation, drawsToUse)
                         const totalScore = getDisplayScore(participation)
 
-                        // MODIFIQUEI AQUI - medalha/faixa amarela igual ao trecho que você mandou (por SCORE)
-                        const cat = scoresContext.getCategoryByScore(totalScore)
-                        const medal = getMedalByCategory(cat)
+                        // MODIFIQUEI AQUI - medalha/faixa amarela usando winnerIds (por sorteio individual)
+                        const medal = getMedalForParticipation(participation.id)
                         const hasMedal = medal !== undefined
 
                         return (

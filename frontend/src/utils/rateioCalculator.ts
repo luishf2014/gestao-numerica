@@ -269,7 +269,7 @@ export function calculateDrawPayouts(
   // Helper para filtrar sorteios válidos (anti-fraude)
   const getValidDraws = (participationCreatedAt: string) => {
     const participationDate = new Date(participationCreatedAt)
-    return draws.filter(d => new Date(d.draw_date) > participationDate)
+    return draws.filter(d => new Date(d.draw_date) >= participationDate)
   }
 
   // Helper para verificar se atingiu TOP (acertou TODOS em algum sorteio)

@@ -9,6 +9,7 @@
  * Calcula a quantidade de acertos entre números sorteados e números da participação
  * CHATGPT: Base para ranking - calcula interseção entre arrays
  *
+ *
  * @param drawNumbers Números sorteados no draw
  * @param participationNumbers Números escolhidos na participação
  * @returns Quantidade de acertos (interseção)
@@ -96,7 +97,7 @@ export function calculateTotalScore(
  * Retorna todos os números acertados considerando todos os sorteios
  * MODIFIQUEI AQUI - Função para obter todos os números acertados de todos os sorteios
  *
- * ANTI-FRAUDE: Se participationCreatedAt for fornecido, só conta sorteios
+ * ANTI-FRAUUDE: Se participationCreatedAt for fornecido, só conta sorteios
  * que aconteceram DEPOIS da participação ser criada.
  *
  * @param participationNumbers Números escolhidos na participação
@@ -222,4 +223,15 @@ export function getMaxHitsInSingleDraw(
 
   if (validDraws.length === 0) return 0
   return Math.max(...validDraws.map(draw => calculateHits(draw.numbers, participationNumbers)))
+}
+
+/**
+ * MODIFIQUEI AQUI - Parse seguro de data para debugging e anti-fraude.
+ * Evita Date inválido quebrando comparações e facilita logar.
+ */
+export function parseDateSafe(dateString?: string | null): Date | null {
+  if (!dateString) return null
+  const d = new Date(dateString)
+  if (Number.isNaN(d.getTime())) return null
+  return d
 }

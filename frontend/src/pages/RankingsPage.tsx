@@ -218,10 +218,13 @@ export default function RankingsPage() {
     // Calcular total arrecadado
     const totalCollected = ranking.length * (selectedContest.ticket_price || 0)
 
+    // MODIFIQUEI AQUI - quando houver sorteio selecionado, calcular ranking usando SOMENTE esse sorteio
+    const drawsForRanking = selectedDrawId ? draws.filter(d => d.id === selectedDrawId) : draws
+
     return calculateRanking({
       contest: selectedContest,
       participations: ranking,
-      draws,
+      draws: drawsForRanking,
       selectedDrawId: selectedDrawId || undefined,
       totalCollected,
     })
@@ -358,17 +361,15 @@ export default function RankingsPage() {
         <div className="flex gap-2 bg-white rounded-xl p-1 shadow-lg border border-[#E5E5E5] max-w-md">
           <button
             onClick={() => setActiveTab('active')}
-            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-              activeTab === 'active' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
-            }`}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'active' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+              }`}
           >
             Ativos ({activeContests.length})
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${
-              activeTab === 'history' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
-            }`}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === 'history' ? 'bg-[#1E7F43] text-white shadow-md' : 'text-[#1F1F1F]/70 hover:text-[#1F1F1F]'
+              }`}
           >
             Histórico ({finishedContests.length})
           </button>
@@ -414,8 +415,8 @@ export default function RankingsPage() {
                     ? 'Nenhum concurso ativo no momento.'
                     : 'Você ainda não está participando de nenhum concurso ativo.'
                   : isAdmin
-                  ? 'Nenhum concurso finalizado ainda.'
-                  : 'Você ainda não participou de nenhum concurso finalizado.'}
+                    ? 'Nenhum concurso finalizado ainda.'
+                    : 'Você ainda não participou de nenhum concurso finalizado.'}
               </p>
             )}
           </div>
@@ -689,11 +690,10 @@ export default function RankingsPage() {
                     {rankingResult.entries.slice(0, 10).map((entry) => (
                       <div
                         key={entry.participationId}
-                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                          entry.highlightRow
+                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${entry.highlightRow
                             ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
                             : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className="flex-shrink-0">
@@ -724,11 +724,10 @@ export default function RankingsPage() {
 
                         <div className="flex items-center gap-3 flex-shrink-0">
                           <span
-                            className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${
-                              entry.score > 0
+                            className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${entry.score > 0
                                 ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
                                 : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                            }`}
+                              }`}
                           >
                             {entry.score}
                           </span>

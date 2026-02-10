@@ -15,3 +15,13 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* MODIFIQUEI AQUI - Links visíveis nas páginas institucionais */
+.sitepage-content a {
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.sitepage-content a:hover {
+  opacity: 0.85;
+}

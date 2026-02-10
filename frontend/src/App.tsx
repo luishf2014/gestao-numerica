@@ -12,6 +12,11 @@ import MyTicketsPage from './pages/MyTicketsPage'
 import RankingPage from './pages/RankingPage'
 import RankingsPage from './pages/RankingsPage'
 import SettingsPage from './pages/SettingsPage'
+import ComoFuncionaPage from './pages/ComoFuncionaPage'
+import RegulamentoPage from './pages/RegulamentoPage'
+import CentralDeAjudaPage from './pages/CentralDeAjudaPage'
+import TermosDeUsoPage from './pages/TermosDeUsoPage'
+
 // Importações do guard e páginas admin
 import RequireAdmin from './routes/RequireAdmin'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -49,6 +54,12 @@ function App() {
             <Route path="/my-tickets" element={<MyTicketsPage />} />
             {/* Rota de Configuracoes */}
             <Route path="/settings" element={<SettingsPage />} />
+
+            {/* Páginas institucionais */}
+            <Route path="/como-funciona" element={<ComoFuncionaPage />} />
+            <Route path="/regulamento" element={<RegulamentoPage />} />
+            <Route path="/central-de-ajuda" element={<CentralDeAjudaPage />} />
+            <Route path="/termos-de-uso" element={<TermosDeUsoPage />} />
           
           {/* MODIFIQUEI AQUI - Rotas Administrativas protegidas com RequireAdmin usando Outlet */}
           <Route path="/admin" element={<RequireAdmin />}>

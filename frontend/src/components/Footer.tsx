@@ -51,18 +51,18 @@ export default function Footer() {
                   Concursos Ativos
                 </Link>
               </li>
-              <li>
+              {/* <li>
                 <Link to="/contests" className="text-white/80 hover:text-white transition-colors text-sm">
                   Página Inicial
                 </Link>
-              </li>
+              </li> */}
               <li>
-                <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
+                <a href="/como-funciona" className="text-white/80 hover:text-white transition-colors text-sm">
                   Como Funciona
                 </a>
               </li>
               <li>
-                <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
+                <a href="/regulamento" className="text-white/80 hover:text-white transition-colors text-sm">
                   Regulamento
                 </a>
               </li>
@@ -74,22 +74,22 @@ export default function Footer() {
             <h4 className="text-white font-bold mb-4">Suporte</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
+                <a href="/central-de-ajuda" className="text-white/80 hover:text-white transition-colors text-sm">
                   Central de Ajuda
                 </a>
               </li>
-              <li>
+              {/* <li>
                 <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
                   Contato
                 </a>
-              </li>
-              <li>
+              </li> */}
+              {/* <li>
                 <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
                   Perguntas Frequentes
                 </a>
-              </li>
+              </li> */}
               <li>
-                <a href="#" className="text-white/80 hover:text-white transition-colors text-sm">
+                <a href="/termos-de-uso" className="text-white/80 hover:text-white transition-colors text-sm">
                   Termos de Uso
                 </a>
               </li>

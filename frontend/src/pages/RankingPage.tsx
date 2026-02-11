@@ -766,12 +766,37 @@ export default function RankingPage() {
                       cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
                     }
                     
+                    // MODIFIQUEI AQUI - Comparação mais robusta considerando milissegundos
+                    // Participações válidas: criadas ANTES ou NO MOMENTO do sorteio (com margem de 1 segundo para evitar problemas de precisão)
                     const validParticipations = cutoffDate
-                      ? participations.filter((p) => new Date(p.created_at) <= cutoffDate)
+                      ? participations.filter((p) => {
+                          const participationDate = new Date(p.created_at)
+                          const isValid = participationDate.getTime() <= (cutoffDate!.getTime() + 1000) // +1 segundo de margem
+                          console.log('[RankingPage] Verificando participação:', {
+                            participationId: p.id,
+                            participationCreatedAt: p.created_at,
+                            participationDate: participationDate.toISOString(),
+                            cutoffDate: cutoffDate!.toISOString(),
+                            isValid,
+                            diffMs: participationDate.getTime() - cutoffDate!.getTime()
+                          })
+                          return isValid
+                        })
                       : participations
                     const invalidParticipationsCount = cutoffDate
-                      ? participations.filter((p) => new Date(p.created_at) > cutoffDate).length
+                      ? participations.filter((p) => {
+                          const participationDate = new Date(p.created_at)
+                          return participationDate.getTime() > (cutoffDate!.getTime() + 1000) // +1 segundo de margem
+                        }).length
                       : 0
+                    
+                    console.log('[RankingPage] Filtro de participações:', {
+                      totalParticipations: participations.length,
+                      validParticipations: validParticipations.length,
+                      invalidParticipationsCount,
+                      cutoffDate: cutoffDate?.toISOString(),
+                      selectedDrawId
+                    })
 
                     const sortedParticipations = [...validParticipations].sort((a, b) => {
                       const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
@@ -907,7 +932,8 @@ export default function RankingPage() {
                     return (
                       <>
                         {/* MODIFIQUEI AQUI - Mensagem sobre participações criadas após o sorteio selecionado/último sorteio */}
-                        {invalidParticipationsCount > 0 && (
+                        {/* Só exibir mensagem se houver participações válidas OU se todas foram inválidas mas há participações */}
+                        {invalidParticipationsCount > 0 && validParticipations.length > 0 && (
                           <tr>
                             <td colSpan={6} className="px-6 py-4 bg-orange-50 border-b border-orange-200">
                               <div className="flex items-center gap-2 text-orange-800">
@@ -916,6 +942,21 @@ export default function RankingPage() {
                                 </svg>
                                 <span className="text-sm font-semibold">
                                   {invalidParticipationsCount} {invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e não aparecem nesta classificação.
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {/* Mensagem quando TODAS as participações foram criadas após o sorteio */}
+                        {invalidParticipationsCount > 0 && validParticipations.length === 0 && participations.length > 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-4 bg-orange-50 border-b border-orange-200">
+                              <div className="flex items-center gap-2 text-orange-800">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span className="text-sm font-semibold">
+                                  Todas as {participations.length} {participations.length === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'}. A classificação aparecerá após a criação de participações válidas.
                                 </span>
                               </div>
                             </td>

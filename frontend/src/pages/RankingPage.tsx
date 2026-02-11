@@ -751,7 +751,7 @@ export default function RankingPage() {
                   {(() => {
                     console.log('MODIFIQUEI AQUI [RankingPage] render table START - selectedDrawId=', selectedDrawId, 'draws.len=', draws.length)
 
-                    // MODIFIQUEI AQUI - Filtrar participações criadas após o sorteio selecionado (ou último sorteio se nenhum selecionado)
+                    // MODIFIQUEI AQUI - Melhor UX: mostrar TODAS as participações, mas marcar quais foram criadas após o sorteio
                     const drawsSortedAsc = [...draws].sort(
                       (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
                     )
@@ -766,39 +766,21 @@ export default function RankingPage() {
                       cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
                     }
                     
-                    // MODIFIQUEI AQUI - Comparação mais robusta considerando milissegundos
-                    // Participações válidas: criadas ANTES ou NO MOMENTO do sorteio (com margem de 1 segundo para evitar problemas de precisão)
-                    const validParticipations = cutoffDate
-                      ? participations.filter((p) => {
-                          const participationDate = new Date(p.created_at)
-                          const isValid = participationDate.getTime() <= (cutoffDate!.getTime() + 1000) // +1 segundo de margem
-                          console.log('[RankingPage] Verificando participação:', {
-                            participationId: p.id,
-                            participationCreatedAt: p.created_at,
-                            participationDate: participationDate.toISOString(),
-                            cutoffDate: cutoffDate!.toISOString(),
-                            isValid,
-                            diffMs: participationDate.getTime() - cutoffDate!.getTime()
-                          })
-                          return isValid
-                        })
-                      : participations
-                    const invalidParticipationsCount = cutoffDate
-                      ? participations.filter((p) => {
-                          const participationDate = new Date(p.created_at)
-                          return participationDate.getTime() > (cutoffDate!.getTime() + 1000) // +1 segundo de margem
-                        }).length
-                      : 0
+                    // Criar um Set para marcar participações criadas após o sorteio (para destacar visualmente)
+                    const participationsCreatedAfterDraw = new Set<string>()
+                    if (cutoffDate) {
+                      participations.forEach((p) => {
+                        const participationDate = new Date(p.created_at)
+                        if (participationDate.getTime() > (cutoffDate!.getTime() + 1000)) { // +1 segundo de margem
+                          participationsCreatedAfterDraw.add(p.id)
+                        }
+                      })
+                    }
                     
-                    console.log('[RankingPage] Filtro de participações:', {
-                      totalParticipations: participations.length,
-                      validParticipations: validParticipations.length,
-                      invalidParticipationsCount,
-                      cutoffDate: cutoffDate?.toISOString(),
-                      selectedDrawId
-                    })
+                    const invalidParticipationsCount = participationsCreatedAfterDraw.size
 
-                    const sortedParticipations = [...validParticipations].sort((a, b) => {
+                    // MODIFIQUEI AQUI - Usar TODAS as participações (não filtrar), apenas marcar as inválidas
+                    const sortedParticipations = [...participations].sort((a, b) => {
                       const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
                       const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       if (scoreB !== scoreA) return scoreB - scoreA
@@ -931,32 +913,16 @@ export default function RankingPage() {
 
                     return (
                       <>
-                        {/* MODIFIQUEI AQUI - Mensagem sobre participações criadas após o sorteio selecionado/último sorteio */}
-                        {/* Só exibir mensagem se houver participações válidas OU se todas foram inválidas mas há participações */}
-                        {invalidParticipationsCount > 0 && validParticipations.length > 0 && (
+                        {/* MODIFIQUEI AQUI - Mensagem informativa sobre participações criadas após o sorteio */}
+                        {invalidParticipationsCount > 0 && (
                           <tr>
-                            <td colSpan={6} className="px-6 py-4 bg-orange-50 border-b border-orange-200">
-                              <div className="flex items-center gap-2 text-orange-800">
+                            <td colSpan={6} className="px-6 py-4 bg-blue-50 border-b border-blue-200">
+                              <div className="flex items-center gap-2 text-blue-800">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span className="text-sm font-semibold">
-                                  {invalidParticipationsCount} {invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e não aparecem nesta classificação.
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                        {/* Mensagem quando TODAS as participações foram criadas após o sorteio */}
-                        {invalidParticipationsCount > 0 && validParticipations.length === 0 && participations.length > 0 && (
-                          <tr>
-                            <td colSpan={6} className="px-6 py-4 bg-orange-50 border-b border-orange-200">
-                              <div className="flex items-center gap-2 text-orange-800">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                                <span className="text-sm font-semibold">
-                                  Todas as {participations.length} {participations.length === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'}. A classificação aparecerá após a criação de participações válidas.
+                                <span className="text-sm">
+                                  <strong>Info:</strong> {invalidParticipationsCount} {invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e está {invalidParticipationsCount === 1 ? 'marcada' : 'marcadas'} abaixo. Essas participações não contam para este sorteio específico.
                                 </span>
                               </div>
                             </td>
@@ -964,24 +930,38 @@ export default function RankingPage() {
                         )}
                         {filteredParticipations.map((participation, index) => {
                       const position = positionById.get(participation.id) || (index + 1)
-                      const hitNumbers = getHitNumbersForParticipation(participation)
+                      
+                      // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio
+                      const wasCreatedAfterDraw = participationsCreatedAfterDraw.has(participation.id)
+                      
+                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, forçar score = 0 e não contar acertos
+                      const hitNumbers = wasCreatedAfterDraw ? [] : getHitNumbersForParticipation(participation)
+                      
+                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, score sempre será 0
+                      const displayScore = wasCreatedAfterDraw 
+                        ? 0 
+                        : (selectedDrawId
+                            ? getScoreUpToDraw(participation, selectedDrawId)
+                            : getTotalScore(participation))
 
-                      const displayScore = selectedDrawId
-                        ? getScoreUpToDraw(participation, selectedDrawId)
-                        : getTotalScore(participation)
-
-                      const scoreCategory = selectedDrawId ? getCategoryByScore(displayScore) : 'NONE'
+                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será 'NONE' (não premiado)
+                      const scoreCategory = wasCreatedAfterDraw ? 'NONE' : (selectedDrawId ? getCategoryByScore(displayScore) : 'NONE')
                       const medal = getMedalByCategory(scoreCategory)
                       const hasMedal = medal !== undefined
                       const positionLabel = hasMedal ? medal : `#${position}`
 
-                      const expectedPrize = getExpectedPrize(participation)
+                      // MODIFIQUEI AQUI - Se foi criada após o sorteio, sempre será não premiado
+                      const expectedPrize = wasCreatedAfterDraw 
+                        ? { isWinner: false, category: 'NONE' as const, amount: 0 }
+                        : getExpectedPrize(participation)
 
                       return (
                         <tr
                           key={participation.id}
-                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${hasMedal ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : ''
-                            }`}
+                          className={`border-b border-[#E5E5E5] transition-colors hover:bg-[#F9F9F9] ${
+                            hasMedal ? 'bg-gradient-to-r from-yellow-50 to-yellow-100' : 
+                            wasCreatedAfterDraw ? 'bg-orange-50/50 opacity-75' : ''
+                          }`}
                         >
                           <td className="py-4 px-6">
                             <div className="flex items-center gap-3">
@@ -993,7 +973,14 @@ export default function RankingPage() {
 
                           <td className="py-4 px-6">
                             <div>
-                              <div className="font-semibold text-[#1F1F1F]">{participation.user?.name || 'Usuário Anônimo'}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-[#1F1F1F]">{participation.user?.name || 'Usuário Anônimo'}</span>
+                                {wasCreatedAfterDraw && (
+                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-semibold" title="Criada após o sorteio">
+                                    Após sorteio
+                                  </span>
+                                )}
+                              </div>
                               {participation.user?.email && <div className="text-sm text-[#1F1F1F]/60">{participation.user.email}</div>}
                             </div>
                           </td>
@@ -1001,7 +988,8 @@ export default function RankingPage() {
                           <td className="py-4 px-6">
                             <div className="flex flex-wrap gap-2">
                               {[...participation.numbers].sort((a, b) => a - b).map((num) => {
-                                const isHit = hitNumbers.includes(num)
+                                // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
+                                const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
                                 const isDrawn = isNumberDrawn(num)
 
                                 return (
@@ -1009,11 +997,11 @@ export default function RankingPage() {
                                     key={num}
                                     className={`font-bold px-3 py-1 rounded-lg text-sm transition-all ${isHit
                                       ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
-                                      : isDrawn
+                                      : isDrawn && !wasCreatedAfterDraw
                                         ? 'bg-[#F4C430] text-[#1F1F1F]'
                                         : 'bg-[#E5E5E5] text-[#1F1F1F]'
                                       }`}
-                                    title={isHit ? 'Número acertado!' : isDrawn ? 'Número sorteado' : ''}
+                                    title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
                                   >
                                     {num.toString().padStart(2, '0')}
                                     {isHit && ' ✓'}

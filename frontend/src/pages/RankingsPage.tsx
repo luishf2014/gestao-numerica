@@ -199,6 +199,67 @@ export default function RankingsPage() {
     })
   }
 
+  // MODIFIQUEI AQUI - Identificar participações criadas após o sorteio (para destacar visualmente)
+  const participationsCreatedAfterDraw = useMemo(() => {
+    const result = new Set<string>()
+    if (draws.length === 0) return result
+    
+    const drawsSortedAsc = [...draws].sort(
+      (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+    )
+    
+    // Determinar a data limite: sorteio selecionado ou último sorteio
+    let cutoffDate: Date | null = null
+    if (selectedDrawId) {
+      const selectedDraw = draws.find(d => d.id === selectedDrawId)
+      cutoffDate = selectedDraw ? new Date(selectedDraw.draw_date) : null
+    } else if (drawsSortedAsc.length > 0) {
+      cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
+    }
+    
+    if (cutoffDate) {
+      ranking.forEach((p) => {
+        const participationDate = new Date(p.created_at)
+        if (participationDate.getTime() > (cutoffDate!.getTime() + 1000)) { // +1 segundo de margem
+          result.add(p.id)
+        }
+      })
+    }
+    
+    return result
+  }, [ranking, draws, selectedDrawId])
+
+  // MODIFIQUEI AQUI - Funções auxiliares para verificar números sorteados e acertos (igual ao RankingPage)
+  const isNumberDrawn = (number: number): boolean => {
+    if (draws.length === 0) return false
+    if (selectedDrawId) {
+      const selectedDraw = draws.find(d => d.id === selectedDrawId)
+      return selectedDraw ? selectedDraw.numbers.includes(number) : false
+    }
+    // Se não há sorteio selecionado, verificar em todos os sorteios
+    return draws.some(d => d.numbers.includes(number))
+  }
+
+  const getHitNumbersForParticipation = (participation: Participation): number[] => {
+    if (draws.length === 0) return []
+    if (selectedDrawId) {
+      const selectedDraw = draws.find(d => d.id === selectedDrawId)
+      if (!selectedDraw) return []
+      return participation.numbers.filter(num => selectedDraw.numbers.includes(num))
+    }
+    // Se não há sorteio selecionado, verificar em todos os sorteios
+    const allDrawnNumbers = new Set<number>()
+    draws.forEach(d => d.numbers.forEach(n => allDrawnNumbers.add(n)))
+    return participation.numbers.filter(num => allDrawnNumbers.has(num))
+  }
+
+  // MODIFIQUEI AQUI - Criar mapa de participações para lookup rápido
+  const participationsMap = useMemo(() => {
+    const map = new Map<string, ParticipationWithUser>()
+    ranking.forEach(p => map.set(p.id, p))
+    return map
+  }, [ranking])
+
   // FONTE ÚNICA DE VERDADE: Calcula ranking completo usando calculateRanking
   const rankingResult = useMemo(() => {
     if (!selectedContest || ranking.length === 0) {
@@ -212,6 +273,7 @@ export default function RankingsPage() {
           lowestWinningScore: null,
           hasAnyWinner: false,
         },
+        invalidParticipationsCount: 0,
       }
     }
 
@@ -685,69 +747,152 @@ export default function RankingsPage() {
                     <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Classificação Completa</h4>
                   </div>
 
-                  {/* MODIFIQUEI AQUI - Mensagem sobre participações criadas após o primeiro sorteio */}
+                  {/* MODIFIQUEI AQUI - Mensagem informativa sobre participações criadas após o sorteio */}
                   {rankingResult.invalidParticipationsCount > 0 && (
-                    <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
-                      <div className="flex items-center gap-2 text-orange-800">
+                    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <div className="flex items-center gap-2 text-blue-800">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span className="text-sm font-semibold">
-                          {rankingResult.invalidParticipationsCount} {rankingResult.invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e não aparecem nesta classificação.
+                        <span className="text-sm">
+                          <strong>Info:</strong> {rankingResult.invalidParticipationsCount} {rankingResult.invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e está {rankingResult.invalidParticipationsCount === 1 ? 'marcada' : 'marcadas'} abaixo. Essas participações não contam para este sorteio específico.
                         </span>
                       </div>
                     </div>
                   )}
 
                   <div className="space-y-2">
-                    {/* FONTE ÚNICA DE VERDADE: Usar entries já ordenados do rankingResult */}
-                    {rankingResult.entries.slice(0, 10).map((entry) => (
-                      <div
-                        key={entry.participationId}
-                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${entry.highlightRow
-                            ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
-                            : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="flex-shrink-0">
-                            {entry.medal ? (
-                              <span className="text-xl sm:text-2xl">{entry.medal}</span>
-                            ) : (
-                              <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">#{entry.position}</span>
-                            )}
-                          </div>
+                    {/* MODIFIQUEI AQUI - Usar TODAS as participações (não apenas as do rankingResult), igual ao RankingPage.tsx */}
+                    {(() => {
+                      // Ordenar todas as participações por score (igual ao RankingPage.tsx)
+                      const sortedParticipations = [...ranking].sort((a, b) => {
+                        // Verificar se foram criadas após o sorteio
+                        const aAfterDraw = participationsCreatedAfterDraw.has(a.id)
+                        const bAfterDraw = participationsCreatedAfterDraw.has(b.id)
+                        
+                        // Buscar score de cada participação
+                        const scoreA = aAfterDraw 
+                          ? 0 
+                          : (rankingResult.entries.find(e => e.participationId === a.id)?.score || 0)
+                        const scoreB = bAfterDraw
+                          ? 0
+                          : (rankingResult.entries.find(e => e.participationId === b.id)?.score || 0)
+                        
+                        if (scoreB !== scoreA) return scoreB - scoreA
+                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                      })
 
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-[#1F1F1F] truncate">{entry.userName}</div>
-                            {entry.userEmail && (
-                              <div className="text-xs text-[#1F1F1F]/60 truncate">{entry.userEmail}</div>
-                            )}
-                          </div>
-
-                          {entry.hitNumbers.length > 0 && (
-                            <div className="hidden sm:flex gap-1 flex-wrap pr-2">
-                              {entry.hitNumbers.map((num) => (
-                                <span key={num} className="px-2 py-1 bg-[#1E7F43] text-white rounded text-xs font-bold">
-                                  {num.toString().padStart(2, '0')}✓
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <span
-                            className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${entry.score > 0
-                                ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
-                                : 'bg-[#E5E5E5] text-[#1F1F1F]'
-                              }`}
+                      return (
+                        <>
+                          {sortedParticipations.slice(0, 10).map((participation, index) => {
+                        // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio
+                        const wasCreatedAfterDraw = participationsCreatedAfterDraw.has(participation.id)
+                        
+                        // Buscar entry do rankingResult se existir
+                        const entry = rankingResult.entries.find(e => e.participationId === participation.id)
+                        
+                        // MODIFIQUEI AQUI - Se foi criada após o sorteio, forçar score = 0 e não mostrar acertos
+                        const displayScore = wasCreatedAfterDraw ? 0 : (entry?.score || 0)
+                        const hitNumbers = wasCreatedAfterDraw ? [] : getHitNumbersForParticipation(participation)
+                        
+                        // Calcular posição baseada no índice ordenado
+                        const position = index + 1
+                        
+                        // Determinar categoria e medalha (apenas se não foi criada após o sorteio)
+                        const scoreCategory = wasCreatedAfterDraw ? 'NONE' : (entry?.category || 'NONE')
+                        const medal = wasCreatedAfterDraw ? null : entry?.medal || null
+                        const hasMedal = medal !== null
+                        const positionLabel = hasMedal ? medal : `#${position}`
+                        
+                        // Buscar dados do usuário da participação
+                        const userName = participation.user?.name || 'Anônimo'
+                        const userEmail = participation.user?.email
+                        const highlightRow = entry?.highlightRow || false
+                      
+                        return (
+                          <div
+                            key={participation.id}
+                            className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-lg border transition-colors ${
+                              highlightRow && !wasCreatedAfterDraw
+                                ? 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-[#F4C430]'
+                                : wasCreatedAfterDraw
+                                ? 'bg-orange-50/50 opacity-75 border-[#E5E5E5]'
+                                : 'bg-white border-[#E5E5E5] hover:border-[#1E7F43]'
+                            }`}
                           >
-                            {entry.score}
-                          </span>
+                            {/* Primeira linha: Posição, Nome, Score */}
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="flex-shrink-0">
+                                {medal && !wasCreatedAfterDraw ? (
+                                  <span className="text-xl sm:text-2xl">{medal}</span>
+                                ) : (
+                                  <span className="text-sm sm:text-base font-bold text-[#1F1F1F]/60">{positionLabel}</span>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-[#1F1F1F] truncate">{userName}</span>
+                                  {wasCreatedAfterDraw && (
+                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-semibold flex-shrink-0" title="Criada após o sorteio">
+                                      Após sorteio
+                                    </span>
+                                  )}
+                                </div>
+                                {userEmail && (
+                                  <div className="text-xs text-[#1F1F1F]/60 truncate">{userEmail}</div>
+                                )}
+                                {/* MODIFIQUEI AQUI - Mostrar código do ticket */}
+                                {participation.ticket_code && (
+                                  <div className="text-xs font-mono text-[#1F1F1F]/70 mt-1">
+                                    Ticket: {participation.ticket_code}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                          {/* Segunda linha: Todos os números com marcação de acertos */}
+                          <div className="flex flex-wrap gap-2 items-center">
+                            {[...participation.numbers].sort((a, b) => a - b).map((num) => {
+                              // MODIFIQUEI AQUI - Se foi criada após o sorteio, não marcar como acerto mesmo que coincida
+                              const isHit = wasCreatedAfterDraw ? false : hitNumbers.includes(num)
+                              const isDrawn = isNumberDrawn(num)
+
+                              return (
+                                <span
+                                  key={num}
+                                  className={`font-bold px-2 sm:px-3 py-1 rounded-lg text-xs sm:text-sm transition-all ${isHit
+                                    ? 'bg-[#1E7F43] text-white shadow-lg transform scale-110'
+                                    : isDrawn && !wasCreatedAfterDraw
+                                      ? 'bg-[#F4C430] text-[#1F1F1F]'
+                                      : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                    }`}
+                                  title={isHit ? 'Número acertado!' : isDrawn && !wasCreatedAfterDraw ? 'Número sorteado' : wasCreatedAfterDraw ? 'Participação criada após o sorteio' : ''}
+                                >
+                                  {num.toString().padStart(2, '0')}
+                                  {isHit && ' ✓'}
+                                </span>
+                              )
+                            })}
+                          </div>
+
+                          {/* Terceira linha: Pontuação */}
+                          <div className="flex items-center justify-end sm:justify-start flex-shrink-0">
+                            <span
+                              className={`px-3 py-1 rounded-lg font-bold text-sm sm:text-base ${displayScore > 0
+                                  ? 'bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white'
+                                  : 'bg-[#E5E5E5] text-[#1F1F1F]'
+                                }`}
+                            >
+                              {displayScore} pts
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
+                        </>
+                      )
+                    })()}
 
                     {ranking.length > 10 && (
                       <div className="text-center pt-2">

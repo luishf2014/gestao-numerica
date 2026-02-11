@@ -326,30 +326,54 @@ export default function RankingPage() {
   }
 
   // MODIFIQUEI AQUI - calcular ganhadores por SCORE (sempre definido)
+  // IMPORTANTE: Usar apenas participações válidas (não criadas após o sorteio)
   const drawWinnersByScore = useMemo(() => {
     const N = Number(contest?.numbers_per_participation || 0)
     const topScore = Number.isFinite(N) ? N : null
     const secondScore = Number.isFinite(N) ? (N - 1) : null
 
+    // MODIFIQUEI AQUI - Calcular cutoffDate para identificar participações válidas
+    const drawsSortedAsc = [...draws].sort(
+      (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+    )
+    
+    let cutoffDate: Date | null = null
+    if (selectedDrawId) {
+      const selectedDraw = draws.find(d => d.id === selectedDrawId)
+      cutoffDate = selectedDraw ? new Date(selectedDraw.draw_date) : null
+    } else if (drawsSortedAsc.length > 0) {
+      cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
+    }
+
+    // MODIFIQUEI AQUI - Filtrar apenas participações válidas (criadas antes do sorteio)
+    const validParticipations = cutoffDate
+      ? participations.filter((p) => {
+          const participationDate = new Date(p.created_at)
+          return participationDate.getTime() <= (cutoffDate!.getTime() + 1000) // +1 segundo de margem
+        })
+      : participations
+
     const scoreOf = (p: ParticipationWithUser) =>
       selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
 
-    const allScores = participations.map((p) => scoreOf(p))
+    // MODIFIQUEI AQUI - Usar apenas scores das participações válidas
+    const validScores = validParticipations.map((p) => scoreOf(p))
 
     const topWinnersCount =
-      topScore !== null ? participations.filter((p) => scoreOf(p) === topScore).length : 0
+      topScore !== null ? validParticipations.filter((p) => scoreOf(p) === topScore).length : 0
 
     const secondWinnersCount =
-      secondScore !== null ? participations.filter((p) => scoreOf(p) === secondScore).length : 0
+      secondScore !== null ? validParticipations.filter((p) => scoreOf(p) === secondScore).length : 0
 
     // LOWEST = menor pontuação (>=0) diferente de TOP e SECOND
-    const positiveScores = allScores.filter(
+    // MODIFIQUEI AQUI - Usar validScores em vez de allScores
+    const positiveScores = validScores.filter(
       (s) => s >= 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
     )
     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
     const lowestWinnersCount =
-      lowestPositiveScore !== null ? participations.filter((p) => scoreOf(p) === lowestPositiveScore).length : 0
+      lowestPositiveScore !== null ? validParticipations.filter((p) => scoreOf(p) === lowestPositiveScore).length : 0
 
     const hasAnyWinner = topWinnersCount > 0 || secondWinnersCount > 0 || lowestWinnersCount > 0
 
@@ -363,7 +387,10 @@ export default function RankingPage() {
       secondWinnersCount,
       lowestWinnersCount,
       hasAnyWinner,
-      allScoresPreview: allScores.slice(0, 10),
+      validScoresPreview: validScores.slice(0, 10),
+      totalParticipations: participations.length,
+      validParticipations: validParticipations.length,
+      invalidParticipations: participations.length - validParticipations.length,
     })
 
     return {
@@ -800,7 +827,17 @@ export default function RankingPage() {
                     const positionById = new Map<string, number>()
                     sortedParticipations.forEach((p, idx) => positionById.set(p.id, idx + 1))
 
+                    // MODIFIQUEI AQUI - Filtrar participações válidas (não criadas após o sorteio) para cálculo de premiação
+                    const validParticipationsForPrize = sortedParticipations.filter(p => 
+                      !participationsCreatedAfterDraw.has(p.id)
+                    )
+
                     const allScores = sortedParticipations.map(p =>
+                      selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
+                    )
+
+                    // MODIFIQUEI AQUI - Calcular scores apenas das participações válidas para premiação
+                    const validScores = validParticipationsForPrize.map(p =>
                       selectedDrawId ? getScoreUpToDraw(p, selectedDrawId) : getTotalScore(p)
                     )
 
@@ -808,7 +845,8 @@ export default function RankingPage() {
                     const topScore = Number.isFinite(N) ? N : null
                     const secondScore = Number.isFinite(N) ? (N - 1) : null
 
-                    const positiveScores = allScores.filter(s => s >= 0 && s !== topScore && s !== secondScore)
+                    // MODIFIQUEI AQUI - Usar validScores em vez de allScores para calcular lowestPositiveScore
+                    const positiveScores = validScores.filter(s => s >= 0 && s !== topScore && s !== secondScore)
                     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
                     console.log('MODIFIQUEI AQUI [RankingPage] score thresholds=', {
@@ -817,6 +855,8 @@ export default function RankingPage() {
                       secondScore,
                       lowestPositiveScore,
                       allScoresPreview: allScores.slice(0, 10),
+                      validScoresPreview: validScores.slice(0, 10),
+                      invalidCount: participationsCreatedAfterDraw.size,
                     })
 
                     type ScoreCategory = 'TOP' | 'SECOND' | 'LOWEST' | 'NONE'
@@ -844,16 +884,22 @@ export default function RankingPage() {
                     }
 
                     // MODIFIQUEI AQUI - winners por SCORE (para dividir corretamente pelo nº de ganhadores)
+                    // Usar validScores em vez de allScores para não contar participações criadas após o sorteio
                     const winnersCountByCategory = () => {
-                      const topCount = topScore !== null ? allScores.filter(s => s === topScore).length : 0
-                      const secondCount = secondScore !== null ? allScores.filter(s => s === secondScore).length : 0
-                      const lowestCount = lowestPositiveScore !== null ? allScores.filter(s => s === lowestPositiveScore).length : 0
+                      const topCount = topScore !== null ? validScores.filter(s => s === topScore).length : 0
+                      const secondCount = secondScore !== null ? validScores.filter(s => s === secondScore).length : 0
+                      const lowestCount = lowestPositiveScore !== null ? validScores.filter(s => s === lowestPositiveScore).length : 0
                       return { TOP: topCount, SECOND: secondCount, LOWEST: lowestCount }
                     }
 
                     // MODIFIQUEI AQUI - Prêmio esperado: prioridade % do concurso; fallback summary
                     const getExpectedPrize = (participation: ParticipationWithUser) => {
                       if (!selectedDrawId) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
+
+                      // MODIFIQUEI AQUI - Participações criadas após o sorteio nunca recebem prêmio
+                      if (participationsCreatedAfterDraw.has(participation.id)) {
+                        return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
+                      }
 
                       const score = selectedDrawId ? getScoreUpToDraw(participation, selectedDrawId) : getTotalScore(participation)
                       const cat = getCategoryByScore(score)

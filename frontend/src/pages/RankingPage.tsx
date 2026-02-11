@@ -11,7 +11,7 @@ import { getContestRanking } from '../services/participationsService'
 import { listDrawsByContestId } from '../services/drawsService'
 import { getDrawPayoutSummary, getPayoutsByDraw } from '../services/payoutsService'
 import { Contest, Participation, Draw } from '../types'
-import { calculateTotalScore, getAllHitNumbers } from '../utils/rankingHelpers'
+import { calculateTotalScore, getAllHitNumbers, getMaxHitsInSingleDraw } from '../utils/rankingHelpers'
 // MODIFIQUEI AQUI - Não usar getPayoutCategory para medalha/categoria/prêmio (agora é por SCORE)
 // import { getPayoutCategory } from '../utils/payoutCategoryHelpers'
 import { getContestState } from '../utils/contestHelpers'
@@ -181,7 +181,9 @@ export default function RankingPage() {
   }
 
   const getTotalScore = (participation: Participation): number => {
-    const score = calculateTotalScore(participation.numbers, draws)
+    // MODIFIQUEI AQUI - Score é o MAIOR número de acertos em UM único sorteio (não cumulativo)
+    // Cada sorteio é verificado individualmente, não soma nada entre sorteios
+    const score = getMaxHitsInSingleDraw(participation.numbers, draws, participation.created_at)
     console.log('MODIFIQUEI AQUI [RankingPage] getTotalScore participationId=', (participation as any)?.id, 'score=', score)
     return score
   }
@@ -193,7 +195,10 @@ export default function RankingPage() {
     const drawOnly = draws.find(d => d.id === drawId)
     const drawsToUse = drawOnly ? [drawOnly] : []
 
-    const score = calculateTotalScore(participation.numbers, drawsToUse)
+    // MODIFIQUEI AQUI - Score é o número de acertos neste sorteio específico (não cumulativo)
+    const score = drawsToUse.length > 0 
+      ? getMaxHitsInSingleDraw(participation.numbers, drawsToUse, participation.created_at)
+      : 0
 
     console.log(
       'MODIFIQUEI AQUI [RankingPage] getScoreUpToDraw(SINGLE)',
@@ -337,9 +342,9 @@ export default function RankingPage() {
     const secondWinnersCount =
       secondScore !== null ? participations.filter((p) => scoreOf(p) === secondScore).length : 0
 
-    // LOWEST = menor pontuação positiva (>0) diferente de TOP e SECOND
+    // LOWEST = menor pontuação (>=0) diferente de TOP e SECOND
     const positiveScores = allScores.filter(
-      (s) => s > 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
+      (s) => s >= 0 && (topScore === null || s !== topScore) && (secondScore === null || s !== secondScore)
     )
     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
@@ -421,7 +426,7 @@ export default function RankingPage() {
     },
     LOWEST: {
       title: 'MENOR PONTUAÇÃO',
-      subtitle: '(menor pontuação positiva)',
+      subtitle: '(menor pontuação a partir de zero)',
     },
   }
 
@@ -583,7 +588,7 @@ export default function RankingPage() {
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
                   <p className="text-sm text-blue-800">
                     <strong>Como funciona a premiação:</strong> este concurso premia apenas as categorias configuradas
-                    (maior pontuação, segunda maior e menor pontuação positiva). Pontuações intermediárias podem não receber prêmio.
+                    (maior pontuação, segunda maior e menor pontuação a partir de zero). Pontuações intermediárias podem não receber prêmio.
                   </p>
                 </div>
               </div>
@@ -746,7 +751,29 @@ export default function RankingPage() {
                   {(() => {
                     console.log('MODIFIQUEI AQUI [RankingPage] render table START - selectedDrawId=', selectedDrawId, 'draws.len=', draws.length)
 
-                    const sortedParticipations = [...participations].sort((a, b) => {
+                    // MODIFIQUEI AQUI - Filtrar participações criadas após o sorteio selecionado (ou último sorteio se nenhum selecionado)
+                    const drawsSortedAsc = [...draws].sort(
+                      (a, b) => new Date(a.draw_date).getTime() - new Date(b.draw_date).getTime()
+                    )
+                    
+                    // Determinar a data limite: sorteio selecionado ou último sorteio
+                    let cutoffDate: Date | null = null
+                    if (selectedDrawId) {
+                      const selectedDraw = draws.find(d => d.id === selectedDrawId)
+                      cutoffDate = selectedDraw ? new Date(selectedDraw.draw_date) : null
+                    } else if (drawsSortedAsc.length > 0) {
+                      // Se não há sorteio selecionado, usar o último sorteio
+                      cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
+                    }
+                    
+                    const validParticipations = cutoffDate
+                      ? participations.filter((p) => new Date(p.created_at) <= cutoffDate)
+                      : participations
+                    const invalidParticipationsCount = cutoffDate
+                      ? participations.filter((p) => new Date(p.created_at) > cutoffDate).length
+                      : 0
+
+                    const sortedParticipations = [...validParticipations].sort((a, b) => {
                       const scoreA = selectedDrawId ? getScoreUpToDraw(a, selectedDrawId) : getTotalScore(a)
                       const scoreB = selectedDrawId ? getScoreUpToDraw(b, selectedDrawId) : getTotalScore(b)
                       if (scoreB !== scoreA) return scoreB - scoreA
@@ -774,7 +801,7 @@ export default function RankingPage() {
                     const topScore = Number.isFinite(N) ? N : null
                     const secondScore = Number.isFinite(N) ? (N - 1) : null
 
-                    const positiveScores = allScores.filter(s => s > 0 && s !== topScore && s !== secondScore)
+                    const positiveScores = allScores.filter(s => s >= 0 && s !== topScore && s !== secondScore)
                     const lowestPositiveScore = positiveScores.length > 0 ? Math.min(...positiveScores) : null
 
                     console.log('MODIFIQUEI AQUI [RankingPage] score thresholds=', {
@@ -824,8 +851,6 @@ export default function RankingPage() {
                       const score = selectedDrawId ? getScoreUpToDraw(participation, selectedDrawId) : getTotalScore(participation)
                       const cat = getCategoryByScore(score)
                       if (cat === 'NONE') return { isWinner: false, category: cat, amount: 0 }
-
-                      if (cat === 'LOWEST' && score <= 0) return { isWinner: false, category: 'NONE' as ScoreCategory, amount: 0 }
 
                       const wc = winnersCountByCategory()
                       const winnersCount =
@@ -879,7 +904,24 @@ export default function RankingPage() {
                       }
                     })
 
-                    return filteredParticipations.map((participation, index) => {
+                    return (
+                      <>
+                        {/* MODIFIQUEI AQUI - Mensagem sobre participações criadas após o sorteio selecionado/último sorteio */}
+                        {invalidParticipationsCount > 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-4 bg-orange-50 border-b border-orange-200">
+                              <div className="flex items-center gap-2 text-orange-800">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span className="text-sm font-semibold">
+                                  {invalidParticipationsCount} {invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e não aparecem nesta classificação.
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {filteredParticipations.map((participation, index) => {
                       const position = positionById.get(participation.id) || (index + 1)
                       const hitNumbers = getHitNumbersForParticipation(participation)
 
@@ -983,7 +1025,9 @@ export default function RankingPage() {
                           </td>
                         </tr>
                       )
-                    })
+                    })}
+                      </>
+                    )
                   })()}
                 </tbody>
 

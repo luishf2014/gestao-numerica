@@ -19,11 +19,11 @@ export default function AdminDraws() {
   const [draws, setDraws] = useState<Draw[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Estados para filtros
   const [filterContestId, setFilterContestId] = useState<string>('all')
   const [filterOnlyOngoing, setFilterOnlyOngoing] = useState<boolean>(false)
-  
+
   // Estados para modal de criar/editar sorteio
   const [showDrawModal, setShowDrawModal] = useState(false)
   const [editingDraw, setEditingDraw] = useState<Draw | null>(null)
@@ -36,7 +36,7 @@ export default function AdminDraws() {
   const [useCustomNumbersCount, setUseCustomNumbersCount] = useState(false)
   const [savingDraw, setSavingDraw] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
-  
+
   // Estado removido - quantidade será sempre baseada no concurso selecionado
 
   useEffect(() => {
@@ -81,6 +81,67 @@ export default function AdminDraws() {
       console.error('Erro ao carregar sorteios:', err)
       setError(err instanceof Error ? err.message : 'Erro ao carregar sorteios')
     }
+  }
+
+  const notifyContestParticipants = async (params: {
+    contestId: string
+    type: 'draw_done' | 'contest_finished'
+    title: string
+    message: string
+    link?: string | null
+    data?: Record<string, any>
+  }) => {
+    if (!params.contestId) return
+
+    // 1) Buscar participantes do concurso (user_ids)
+    const { data: participationsData, error: partErr } = await supabase
+      .from('participations')
+      .select('user_id')
+      .eq('contest_id', params.contestId)
+
+    if (partErr) throw partErr
+
+    const allUserIds = Array.from(
+      new Set((participationsData ?? []).map((p: any) => p.user_id).filter(Boolean))
+    )
+
+    if (allUserIds.length === 0) return
+
+    // 2) Filtrar por preferências
+    const prefsSelect =
+      params.type === 'draw_done'
+        ? 'user_id, enabled, notify_draw_done'
+        : 'user_id, enabled, notify_contest_finished'
+
+    const { data: prefsData, error: prefsErr } = await supabase
+      .from('notification_preferences')
+      .select(prefsSelect)
+      .in('user_id', allUserIds)
+      .eq('enabled', true)
+
+    if (prefsErr) throw prefsErr
+
+    const allowedUserIds = (prefsData ?? [])
+      .filter((p: any) =>
+        params.type === 'draw_done' ? p.notify_draw_done === true : p.notify_contest_finished === true
+      )
+      .map((p: any) => p.user_id)
+
+    if (allowedUserIds.length === 0) return
+
+    // 3) Inserir notificações
+    const payload = allowedUserIds.map((uid: string) => ({
+      user_id: uid,
+      type: params.type,
+      title: params.title,
+      message: params.message,
+      link: params.link ?? null,
+      data: params.data ?? {},
+      read_at: null,
+    }))
+
+    const { error: insErr } = await supabase.from('notifications').insert(payload)
+    if (insErr) throw insErr
   }
 
   const handleOpenDrawModal = (draw?: Draw) => {
@@ -203,12 +264,12 @@ export default function AdminDraws() {
 
   // MODIFIQUEI AQUI - Função auxiliar para mostrar modais de erro sem fechar o formulário
   type ErrorIconType = 'warning' | 'calendar' | 'numbers' | 'contest' | 'error'
-  
+
   const showErrorModal = (title: string, message: string, iconType: ErrorIconType = 'warning') => {
     // Definir ícone e cor baseado no tipo
     let iconSvg = ''
     let iconBgClass = 'bg-orange-500'
-    
+
     switch (iconType) {
       case 'calendar':
         iconSvg = `
@@ -244,7 +305,7 @@ export default function AdminDraws() {
         iconBgClass = 'bg-orange-500'
         break
     }
-    
+
     const modal = document.createElement('div')
     modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[60]'
     modal.innerHTML = `
@@ -262,7 +323,7 @@ export default function AdminDraws() {
       </div>
     `
     document.body.appendChild(modal)
-    
+
     const closeBtn = modal.querySelector('button')
     const closeModal = () => {
       modal.remove()
@@ -339,26 +400,30 @@ export default function AdminDraws() {
         return
       }
 
-      // Verificar se algum participante já atingiu a pontuação máxima (antes de criar novo sorteio)
+      // MODIFIQUEI AQUI - Verificar se o concurso já foi finalizado (status = 'finished')
+      // O concurso só finaliza quando alguém acerta TODOS os números em UM sorteio específico
+      // Não usa current_score cumulativo, apenas verifica o status do concurso
       if (!editingDraw && contest) {
-        const { data: maxScoreData } = await supabase
-          .from('participations')
-          .select('current_score')
-          .eq('contest_id', drawForm.contest_id)
-          .eq('status', 'active')
-          .order('current_score', { ascending: false })
-          .limit(1)
+        // Buscar status atualizado do concurso
+        const { data: currentContest, error: contestError } = await supabase
+          .from('contests')
+          .select('status')
+          .eq('id', drawForm.contest_id)
+          .single()
 
-        const maxCurrentScore = maxScoreData?.[0]?.current_score || 0
-        if (maxCurrentScore >= (contest.numbers_per_participation || 10)) {
+        if (contestError) {
+          console.error('[AdminDraws] Erro ao verificar status do concurso:', contestError)
+        } else if (currentContest?.status === 'finished') {
           setSavingDraw(false)
           showErrorModal(
             'Concurso Finalizado',
-            `Um participante já atingiu a pontuação máxima de <strong>${contest.numbers_per_participation} acertos</strong>.<br /><br />Não é possível criar novos sorteios para este concurso.`,
+            `Este concurso já foi finalizado porque um participante acertou todos os <strong>${contest.numbers_per_participation} números</strong> em um sorteio.<br /><br />Não é possível criar novos sorteios para este concurso.`,
             'warning'
           )
           return
         }
+        // MODIFIQUEI AQUI - Notificações agora são criadas automaticamente via trigger no banco (024_notify_on_draw_created.sql)
+        // Removida chamada manual para evitar duplicatas
       }
 
       const input: CreateDrawInput | UpdateDrawInput = {
@@ -374,17 +439,17 @@ export default function AdminDraws() {
         const createInput = input as CreateDrawInput
         const createdDraw = await createDraw(createInput)
         console.log('[AdminDraws] Sorteio criado:', createdDraw.id)
-        
+
         // MODIFIQUEI AQUI - Aguardar um pouco para garantir que o trigger SQL e a atualização do status sejam propagados
         await new Promise(resolve => setTimeout(resolve, 800))
-        
+
         // MODIFIQUEI AQUI - Recarregar concursos após criar sorteio para atualizar status
         // Forçar recarregamento completo dos dados
         setLoading(true)
         try {
           const contestsData = await listAllContests()
           console.log('[AdminDraws] Concursos recarregados após criar sorteio. Total:', contestsData.length)
-          
+
           // Verificar se o status foi atualizado
           const updatedContest = contestsData.find(c => c.id === createInput.contest_id)
           if (updatedContest) {
@@ -393,7 +458,7 @@ export default function AdminDraws() {
               console.warn(`[AdminDraws] ATENÇÃO: Status do concurso não foi atualizado para 'finished'. Status atual: ${updatedContest.status}`)
             }
           }
-          
+
           setContests(contestsData)
         } catch (err) {
           console.error('[AdminDraws] Erro ao recarregar concursos:', err)
@@ -404,12 +469,12 @@ export default function AdminDraws() {
 
       await loadDraws()
       handleCloseDrawModal()
-      
+
       // Mostrar mensagem de sucesso
-      const successMessage = editingDraw 
-        ? 'Sorteio atualizado com sucesso!' 
+      const successMessage = editingDraw
+        ? 'Sorteio atualizado com sucesso!'
         : 'Sorteio criado com sucesso!'
-      
+
       const modal = document.createElement('div')
       modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
       modal.innerHTML = `
@@ -429,7 +494,7 @@ export default function AdminDraws() {
         </div>
       `
       document.body.appendChild(modal)
-      
+
       const closeBtn = modal.querySelector('button')
       const closeModal = () => {
         modal.remove()
@@ -454,7 +519,7 @@ export default function AdminDraws() {
       await deleteDraw(id)
       await loadDraws()
       setShowDeleteConfirm(null)
-      
+
       // Mostrar mensagem de sucesso
       const modal = document.createElement('div')
       modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50'
@@ -475,7 +540,7 @@ export default function AdminDraws() {
         </div>
       `
       document.body.appendChild(modal)
-      
+
       const closeBtn = modal.querySelector('button')
       const closeModal = () => {
         modal.remove()
@@ -514,7 +579,7 @@ export default function AdminDraws() {
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         {/* Cabeçalho */}
         <div className="mb-6">
@@ -532,7 +597,7 @@ export default function AdminDraws() {
               Sorteios
             </h1>
           </div>
-          
+
           <div className="text-center">
             <p className="text-[#1F1F1F]/70">
               Gerencie sorteios múltiplos com datas/horários e resultados
@@ -569,10 +634,10 @@ export default function AdminDraws() {
                     {contests
                       .filter(contest => !filterOnlyOngoing || (contest.status === 'active' || contest.status === 'finished'))
                       .map((contest) => (
-                      <option key={contest.id} value={contest.id}>
-                        {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
-                      </option>
-                    ))}
+                        <option key={contest.id} value={contest.id}>
+                          {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
+                        </option>
+                      ))}
                   </select>
                   {/* Filtro de concursos em andamento */}
                   <div className="mt-3 flex items-center gap-2">
@@ -777,247 +842,245 @@ export default function AdminDraws() {
                           {contests
                             .filter(contest => editingDraw || contest.status === 'active') // Só mostra ativos para novos sorteios
                             .map((contest) => (
-                            <option key={contest.id} value={contest.id}>
-                              {contest.name} ({contest.numbers_per_participation} números){contest.contest_code ? ` - ${contest.contest_code}` : ''}
-                            </option>
-                          ))}
+                              <option key={contest.id} value={contest.id}>
+                                {contest.name} ({contest.numbers_per_participation} números){contest.contest_code ? ` - ${contest.contest_code}` : ''}
+                              </option>
+                            ))}
                         </select>
                       </div>
 
-                    {drawForm.contest_id && (
-                      <>
-                        {/* Quantidade de números customizada (opcional) */}
-                        <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
-                          <div className="flex items-center justify-between mb-3">
-                            <label className="block text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
-                              Quantidade de Números
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-[#1F1F1F]/60">
-                                Padrão: {contests.find(c => c.id === drawForm.contest_id)?.numbers_per_participation || 6}
-                              </span>
-                              <label className="relative inline-flex items-center cursor-pointer">
+                      {drawForm.contest_id && (
+                        <>
+                          {/* Quantidade de números customizada (opcional) */}
+                          <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                            <div className="flex items-center justify-between mb-3">
+                              <label className="block text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
+                                Quantidade de Números
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-[#1F1F1F]/60">
+                                  Padrão: {contests.find(c => c.id === drawForm.contest_id)?.numbers_per_participation || 6}
+                                </span>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={useCustomNumbersCount}
+                                    onChange={(e) => {
+                                      setUseCustomNumbersCount(e.target.checked)
+                                      if (!e.target.checked) {
+                                        // Se desativar, limpar a quantidade customizada e os números
+                                        setDrawForm({ ...drawForm, numbers_count: undefined, numbers: [] })
+                                      } else {
+                                        // Se ativar, definir uma quantidade inicial igual à do concurso
+                                        const contest = contests.find(c => c.id === drawForm.contest_id)
+                                        setDrawForm({
+                                          ...drawForm,
+                                          numbers_count: contest?.numbers_per_participation || 6,
+                                          numbers: [], // Limpar números ao mudar quantidade
+                                        })
+                                      }
+                                    }}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1E7F43]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1E7F43]"></div>
+                                  <span className="ml-2 text-xs font-medium text-[#1F1F1F]/70">Customizar</span>
+                                </label>
+                              </div>
+                            </div>
+                            {useCustomNumbersCount && (
+                              <div className="mt-3">
                                 <input
-                                  type="checkbox"
-                                  checked={useCustomNumbersCount}
+                                  type="number"
+                                  min="1"
+                                  max="20"
+                                  value={drawForm.numbers_count || ''}
                                   onChange={(e) => {
-                                    setUseCustomNumbersCount(e.target.checked)
-                                    if (!e.target.checked) {
-                                      // Se desativar, limpar a quantidade customizada e os números
+                                    const value = parseInt(e.target.value, 10)
+                                    if (!isNaN(value) && value >= 1 && value <= 20) {
+                                      // Se mudar a quantidade, limpar os números selecionados
+                                      setDrawForm({ ...drawForm, numbers_count: value, numbers: [] })
+                                    } else if (e.target.value === '') {
                                       setDrawForm({ ...drawForm, numbers_count: undefined, numbers: [] })
-                                    } else {
-                                      // Se ativar, definir uma quantidade inicial igual à do concurso
-                                      const contest = contests.find(c => c.id === drawForm.contest_id)
-                                      setDrawForm({
-                                        ...drawForm,
-                                        numbers_count: contest?.numbers_per_participation || 6,
-                                        numbers: [], // Limpar números ao mudar quantidade
-                                      })
                                     }
                                   }}
-                                  className="sr-only peer"
+                                  placeholder="Ex: 1 (bolão), 6 (mega)"
+                                  className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
                                 />
-                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1E7F43]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1E7F43]"></div>
-                                <span className="ml-2 text-xs font-medium text-[#1F1F1F]/70">Customizar</span>
-                              </label>
-                            </div>
-                          </div>
-                          {useCustomNumbersCount && (
-                            <div className="mt-3">
-                              <input
-                                type="number"
-                                min="1"
-                                max="20"
-                                value={drawForm.numbers_count || ''}
-                                onChange={(e) => {
-                                  const value = parseInt(e.target.value, 10)
-                                  if (!isNaN(value) && value >= 1 && value <= 20) {
-                                    // Se mudar a quantidade, limpar os números selecionados
-                                    setDrawForm({ ...drawForm, numbers_count: value, numbers: [] })
-                                  } else if (e.target.value === '') {
-                                    setDrawForm({ ...drawForm, numbers_count: undefined, numbers: [] })
-                                  }
-                                }}
-                                placeholder="Ex: 1 (bolão), 6 (mega)"
-                                className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
-                              />
-                              <p className="text-xs text-[#1F1F1F]/60 mt-2">
-                                Defina uma quantidade diferente da configuração padrão do concurso.
-                                <br />
-                                <strong>Exemplo:</strong> Bolão com 1 dezena por sorteio, Mega com 6 números.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
-                          <label htmlFor="draw-date" className="block text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
-                            <span className="text-[#1E7F43]">*</span>
-                            Data e Hora do Sorteio
-                          </label>
-                          <input
-                            id="draw-date"
-                            type="datetime-local"
-                            value={drawForm.draw_date}
-                            onChange={(e) => setDrawForm({ ...drawForm, draw_date: e.target.value })}
-                            className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
-                          />
-                        </div>
-
-                        <div className="border-t border-[#E5E5E5] pt-4">
-                          {(() => {
-                            const contest = contests.find(c => c.id === drawForm.contest_id)
-                            // Usa quantidade customizada se definida, senão usa a do concurso
-                            const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
-                              ? drawForm.numbers_count
-                              : (contest?.numbers_per_participation || 6)
-                            const selectedCount = drawForm.numbers.length
-                            const isComplete = selectedCount === requiredCount
-
-                            return (
-                              <div className="mb-4">
-                                <div className="flex items-center justify-between mb-4">
-                                  <div>
-                                    <h4 className="text-lg font-bold text-[#1F1F1F]">Números Sorteados</h4>
-                                    <p className="text-sm text-[#1F1F1F]/70 mt-1">
-                                      {isComplete ? (
-                                        <span className="text-[#1E7F43] font-semibold">
-                                          ✓ {selectedCount} de {requiredCount} números selecionados
-                                          {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
-                                        </span>
-                                      ) : (
-                                        <span className={selectedCount < requiredCount ? 'text-orange-600 font-semibold' : 'text-[#1F1F1F]/70'}>
-                                          {selectedCount} de {requiredCount} números selecionados
-                                          {selectedCount < requiredCount && ` (faltam ${requiredCount - selectedCount})`}
-                                          {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
-                                        </span>
-                                      )}
-                                    </p>
-                                  </div>
-                                  <button
-                                    onClick={handleGenerateRandomNumbers}
-                                    className="px-4 py-2 bg-[#3CCB7F] text-white rounded-lg hover:bg-[#1E7F43] transition-colors text-sm font-semibold flex items-center gap-2"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                    Gerar Aleatórios ({requiredCount} números)
-                                  </button>
-                                </div>
-
-                                {/* Barra de progresso visual */}
-                                <div className="mb-4">
-                                  <div className="w-full bg-[#E5E5E5] rounded-full h-3">
-                                    <div
-                                      className={`h-3 rounded-full transition-all duration-300 ${
-                                        isComplete ? 'bg-[#1E7F43]' : selectedCount < requiredCount ? 'bg-orange-500' : 'bg-blue-500'
-                                      }`}
-                                      style={{ width: `${Math.min((selectedCount / requiredCount) * 100, 100)}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })()}
-
-                          {/* Números selecionados */}
-                          {drawForm.numbers.length > 0 && (
-                            <div className="mb-5 p-4 bg-white rounded-xl border-2 border-[#F4C430]/30">
-                              <div className="flex items-center justify-between mb-3">
-                                <p className="text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  Números Selecionados:
+                                <p className="text-xs text-[#1F1F1F]/60 mt-2">
+                                  Defina uma quantidade diferente da configuração padrão do concurso.
+                                  <br />
+                                  <strong>Exemplo:</strong> Bolão com 1 dezena por sorteio, Mega com 6 números.
                                 </p>
-                                <button
-                                  onClick={handleClearAllNumbers}
-                                  className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200 text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg transform hover:scale-105"
-                                  title="Limpar todos os números selecionados"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                  Limpar
-                                </button>
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                {drawForm.numbers.map((num, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-4 py-2 bg-gradient-to-br from-[#F4C430] to-[#F4C430]/80 text-[#1F1F1F] rounded-xl font-extrabold text-sm flex items-center gap-2 shadow-md border-2 border-[#F4C430]/50"
-                                  >
-                                    {String(num).padStart(2, '0')}
+                            )}
+                          </div>
+
+                          <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
+                            <label htmlFor="draw-date" className="block text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
+                              <span className="text-[#1E7F43]">*</span>
+                              Data e Hora do Sorteio
+                            </label>
+                            <input
+                              id="draw-date"
+                              type="datetime-local"
+                              value={drawForm.draw_date}
+                              onChange={(e) => setDrawForm({ ...drawForm, draw_date: e.target.value })}
+                              className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
+                            />
+                          </div>
+
+                          <div className="border-t border-[#E5E5E5] pt-4">
+                            {(() => {
+                              const contest = contests.find(c => c.id === drawForm.contest_id)
+                              // Usa quantidade customizada se definida, senão usa a do concurso
+                              const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
+                                ? drawForm.numbers_count
+                                : (contest?.numbers_per_participation || 6)
+                              const selectedCount = drawForm.numbers.length
+                              const isComplete = selectedCount === requiredCount
+
+                              return (
+                                <div className="mb-4">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                      <h4 className="text-lg font-bold text-[#1F1F1F]">Números Sorteados</h4>
+                                      <p className="text-sm text-[#1F1F1F]/70 mt-1">
+                                        {isComplete ? (
+                                          <span className="text-[#1E7F43] font-semibold">
+                                            ✓ {selectedCount} de {requiredCount} números selecionados
+                                            {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
+                                          </span>
+                                        ) : (
+                                          <span className={selectedCount < requiredCount ? 'text-orange-600 font-semibold' : 'text-[#1F1F1F]/70'}>
+                                            {selectedCount} de {requiredCount} números selecionados
+                                            {selectedCount < requiredCount && ` (faltam ${requiredCount - selectedCount})`}
+                                            {useCustomNumbersCount && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Customizado</span>}
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
                                     <button
-                                      onClick={() => handleRemoveNumber(num)}
-                                      className="text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full p-0.5 transition-all"
-                                      title="Remover este número"
+                                      onClick={handleGenerateRandomNumbers}
+                                      className="px-4 py-2 bg-[#3CCB7F] text-white rounded-lg hover:bg-[#1E7F43] transition-colors text-sm font-semibold flex items-center gap-2"
                                     >
                                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                       </svg>
+                                      Gerar Aleatórios ({requiredCount} números)
                                     </button>
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                                  </div>
 
-                          {/* Grade de números */}
-                          {(() => {
-                            const contest = contests.find(c => c.id === drawForm.contest_id)
-                            const min = contest?.min_number || 0
-                            const max = contest?.max_number || 99
-                            const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i)
-                            // Usa quantidade customizada se definida, senão usa a do concurso
-                            const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
-                              ? drawForm.numbers_count
-                              : (contest?.numbers_per_participation || 6)
-                            const isLimitReached = drawForm.numbers.length >= requiredCount
-                            
-                            return (
-                              <div>
-                                <p className="text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                  </svg>
-                                  Selecione os números (Faixa: {String(min).padStart(2, '0')} - {String(max).padStart(2, '0')})
-                                  {isLimitReached && (
-                                    <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold">
-                                      Limite: {requiredCount}
-                                    </span>
-                                  )}
-                                </p>
-                                <div className="grid grid-cols-10 gap-2 max-h-64 overflow-y-auto p-3 border-2 border-[#E5E5E5] rounded-xl bg-white custom-scrollbar">
-                                  {numbers.map((num) => {
-                                    const isSelected = drawForm.numbers.includes(num)
-                                    const isDisabled = isSelected || isLimitReached
-                                    
-                                    return (
+                                  {/* Barra de progresso visual */}
+                                  <div className="mb-4">
+                                    <div className="w-full bg-[#E5E5E5] rounded-full h-3">
+                                      <div
+                                        className={`h-3 rounded-full transition-all duration-300 ${isComplete ? 'bg-[#1E7F43]' : selectedCount < requiredCount ? 'bg-orange-500' : 'bg-blue-500'
+                                          }`}
+                                        style={{ width: `${Math.min((selectedCount / requiredCount) * 100, 100)}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })()}
+
+                            {/* Números selecionados */}
+                            {drawForm.numbers.length > 0 && (
+                              <div className="mb-5 p-4 bg-white rounded-xl border-2 border-[#F4C430]/30">
+                                <div className="flex items-center justify-between mb-3">
+                                  <p className="text-sm font-bold text-[#1F1F1F] flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#F4C430]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Números Selecionados:
+                                  </p>
+                                  <button
+                                    onClick={handleClearAllNumbers}
+                                    className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200 text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg transform hover:scale-105"
+                                    title="Limpar todos os números selecionados"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Limpar
+                                  </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {drawForm.numbers.map((num, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-4 py-2 bg-gradient-to-br from-[#F4C430] to-[#F4C430]/80 text-[#1F1F1F] rounded-xl font-extrabold text-sm flex items-center gap-2 shadow-md border-2 border-[#F4C430]/50"
+                                    >
+                                      {String(num).padStart(2, '0')}
                                       <button
-                                        key={num}
-                                        onClick={() => handleAddNumber(num)}
-                                        disabled={isDisabled}
-                                        className={`px-3 py-2.5 rounded-xl font-extrabold text-sm transition-all duration-200 ${
-                                          isSelected
-                                            ? 'bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] text-white cursor-not-allowed shadow-lg scale-105'
-                                            : isLimitReached
-                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
-                                            : 'bg-[#F9F9F9] text-[#1F1F1F] hover:bg-gradient-to-br hover:from-[#F4C430] hover:to-[#F4C430]/80 hover:text-[#1F1F1F] hover:shadow-md hover:scale-105 border-2 border-transparent hover:border-[#F4C430]/50'
-                                        }`}
-                                        title={isLimitReached && !isSelected ? `Limite de ${requiredCount} números atingido` : ''}
+                                        onClick={() => handleRemoveNumber(num)}
+                                        className="text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full p-0.5 transition-all"
+                                        title="Remover este número"
                                       >
-                                        {String(num).padStart(2, '0')}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
                                       </button>
-                                    )
-                                  })}
+                                    </span>
+                                  ))}
                                 </div>
                               </div>
-                            )
-                          })()}
-                        </div>
-                      </>
-                    )}
+                            )}
+
+                            {/* Grade de números */}
+                            {(() => {
+                              const contest = contests.find(c => c.id === drawForm.contest_id)
+                              const min = contest?.min_number || 0
+                              const max = contest?.max_number || 99
+                              const numbers = Array.from({ length: max - min + 1 }, (_, i) => min + i)
+                              // Usa quantidade customizada se definida, senão usa a do concurso
+                              const requiredCount = (useCustomNumbersCount && drawForm.numbers_count)
+                                ? drawForm.numbers_count
+                                : (contest?.numbers_per_participation || 6)
+                              const isLimitReached = drawForm.numbers.length >= requiredCount
+
+                              return (
+                                <div>
+                                  <p className="text-sm font-bold text-[#1F1F1F] mb-3 flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                    Selecione os números (Faixa: {String(min).padStart(2, '0')} - {String(max).padStart(2, '0')})
+                                    {isLimitReached && (
+                                      <span className="ml-2 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs font-bold">
+                                        Limite: {requiredCount}
+                                      </span>
+                                    )}
+                                  </p>
+                                  <div className="grid grid-cols-10 gap-2 max-h-64 overflow-y-auto p-3 border-2 border-[#E5E5E5] rounded-xl bg-white custom-scrollbar">
+                                    {numbers.map((num) => {
+                                      const isSelected = drawForm.numbers.includes(num)
+                                      const isDisabled = isSelected || isLimitReached
+
+                                      return (
+                                        <button
+                                          key={num}
+                                          onClick={() => handleAddNumber(num)}
+                                          disabled={isDisabled}
+                                          className={`px-3 py-2.5 rounded-xl font-extrabold text-sm transition-all duration-200 ${isSelected
+                                            ? 'bg-gradient-to-br from-[#1E7F43] to-[#3CCB7F] text-white cursor-not-allowed shadow-lg scale-105'
+                                            : isLimitReached
+                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                              : 'bg-[#F9F9F9] text-[#1F1F1F] hover:bg-gradient-to-br hover:from-[#F4C430] hover:to-[#F4C430]/80 hover:text-[#1F1F1F] hover:shadow-md hover:scale-105 border-2 border-transparent hover:border-[#F4C430]/50'
+                                            }`}
+                                          title={isLimitReached && !isSelected ? `Limite de ${requiredCount} números atingido` : ''}
+                                        >
+                                          {String(num).padStart(2, '0')}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 

@@ -27,6 +27,7 @@ interface CartContextType {
   getItemCount: () => number
   getTotalPrice: () => number
   hasItemForContest: (contestId: string) => boolean
+  reloadCart: () => void // MODIFIQUEI AQUI - Função para recarregar carrinho do localStorage
 }
 
 // Criar contexto
@@ -40,8 +41,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
   const [isLoaded, setIsLoaded] = useState(false)
 
-  // Carregar carrinho do localStorage ao iniciar
-  useEffect(() => {
+  // MODIFIQUEI AQUI - Função para carregar carrinho do localStorage
+  const loadCartFromStorage = useCallback(() => {
     try {
       const savedCart = localStorage.getItem(CART_STORAGE_KEY)
       if (savedCart) {
@@ -50,13 +51,51 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
         const validItems = parsed.filter(item => item.addedAt > oneDayAgo)
         setItems(validItems)
+        console.log('[CartContext] Carrinho carregado do localStorage:', validItems.length, 'itens')
+        return validItems
+      } else {
+        setItems([])
+        return []
       }
     } catch (err) {
       console.error('[CartContext] Erro ao carregar carrinho:', err)
-    } finally {
-      setIsLoaded(true)
+      setItems([])
+      return []
     }
   }, [])
+
+  // Carregar carrinho do localStorage ao iniciar
+  useEffect(() => {
+    loadCartFromStorage()
+    setIsLoaded(true)
+  }, [loadCartFromStorage])
+
+  // MODIFIQUEI AQUI - Recarregar carrinho quando a página recebe foco (útil após logout/login)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isLoaded) {
+        const savedCart = localStorage.getItem(CART_STORAGE_KEY)
+        if (savedCart) {
+          try {
+            const parsed = JSON.parse(savedCart) as CartItem[]
+            const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000)
+            const validItems = parsed.filter(item => item.addedAt > oneDayAgo)
+            // Só atualizar se houver diferença
+            if (validItems.length !== items.length || 
+                JSON.stringify(validItems.map(i => i.id).sort()) !== JSON.stringify(items.map(i => i.id).sort())) {
+              setItems(validItems)
+              console.log('[CartContext] Carrinho sincronizado do localStorage:', validItems.length, 'itens')
+            }
+          } catch (err) {
+            console.error('[CartContext] Erro ao sincronizar carrinho:', err)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [isLoaded, items])
 
   // Salvar carrinho no localStorage sempre que mudar
   useEffect(() => {
@@ -112,6 +151,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return items.some(item => item.contestId === contestId)
   }, [items])
 
+  // MODIFIQUEI AQUI - Função para recarregar carrinho do localStorage
+  const reloadCart = useCallback(() => {
+    console.log('[CartContext] Recarregando carrinho do localStorage...')
+    loadCartFromStorage()
+  }, [loadCartFromStorage])
+
   return (
     <CartContext.Provider
       value={{
@@ -122,6 +167,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         getItemCount,
         getTotalPrice,
         hasItemForContest,
+        reloadCart,
       }}
     >
       {children}

@@ -14,33 +14,33 @@ import Footer from '../components/Footer'
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { user, profile, loading: authLoading, refreshProfile } = useAuth()
-  
+
   // Estado do perfil
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [cpf, setCpf] = useState('')
   const [hasCpfSaved, setHasCpfSaved] = useState(false)
-  
+
   // Estado de alteração de senha
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPasswordSection, setShowPasswordSection] = useState(false)
-  
+
   // Estado de preferências
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [notifyDraws, setNotifyDraws] = useState(true)
   const [notifyFinished, setNotifyFinished] = useState(true)
   const [preferredChannel, setPreferredChannel] = useState<'whatsapp' | 'email'>('whatsapp')
-  
+
   // Estado de segurança
   const [lastAccess, setLastAccess] = useState<string>('')
   const [activeSessions, setActiveSessions] = useState(1)
-  
+
   // Estado de navegação lateral
   const [activeSection, setActiveSection] = useState<'profile' | 'preferences' | 'security'>('profile')
-  
+
   // Estados de UI
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -107,7 +107,7 @@ export default function SettingsPage() {
   const loadUserData = async () => {
     try {
       setLoading(true)
-      
+
       // Carregar dados do perfil
       if (profile) {
         setName(profile.name || '')
@@ -122,33 +122,31 @@ export default function SettingsPage() {
           setHasCpfSaved(false)
         }
       }
-      
+
       // MODIFIQUEI AQUI - Carregar último acesso (usando updated_at do perfil como aproximação)
       if (profile?.updated_at) {
         setLastAccess(new Date(profile.updated_at).toLocaleString('pt-BR'))
       }
-      
-      // MODIFIQUEI AQUI - Carregar preferências do localStorage (futuramente pode vir do backend)
-      const savedNotifications = localStorage.getItem('notificationsEnabled')
-      if (savedNotifications !== null) {
-        setNotificationsEnabled(savedNotifications === 'true')
+
+      // MODIFIQUEI AQUI - Carregar preferências do Supabase (notification_preferences)
+      // (antes isso estava com await solto no corpo do componente e quebrava o build)
+      if (user?.id) {
+        const { data: prefs, error: prefsErr } = await supabase
+          .from('notification_preferences')
+          .select('enabled, notify_draw_done, notify_contest_finished')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        // Se der erro (ex.: tabela ainda não existe / RLS), não quebra a página inteira
+        if (!prefsErr) {
+          setNotificationsEnabled(prefs?.enabled ?? true)
+          setNotifyDraws(prefs?.notify_draw_done ?? true)
+          setNotifyFinished(prefs?.notify_contest_finished ?? true)
+        } else {
+          console.warn('[SettingsPage] Não foi possível carregar notification_preferences:', prefsErr)
+        }
       }
-      
-      const savedNotifyDraws = localStorage.getItem('notifyDraws')
-      if (savedNotifyDraws !== null) {
-        setNotifyDraws(savedNotifyDraws === 'true')
-      }
-      
-      const savedNotifyFinished = localStorage.getItem('notifyFinished')
-      if (savedNotifyFinished !== null) {
-        setNotifyFinished(savedNotifyFinished === 'true')
-      }
-      
-      const savedChannel = localStorage.getItem('preferredChannel')
-      if (savedChannel) {
-        setPreferredChannel(savedChannel as 'whatsapp' | 'email')
-      }
-      
+
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       setError('Erro ao carregar configurações')
@@ -240,7 +238,7 @@ export default function SettingsPage() {
     try {
       setSaving(true)
       setError(null)
-      
+
       // MODIFIQUEI AQUI - Atualizar senha no Supabase Auth
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
@@ -263,15 +261,33 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSavePreferences = () => {
-    // MODIFIQUEI AQUI - Salvar preferências no localStorage (futuramente pode ser no backend)
-    localStorage.setItem('notificationsEnabled', notificationsEnabled.toString())
-    localStorage.setItem('notifyDraws', notifyDraws.toString())
-    localStorage.setItem('notifyFinished', notifyFinished.toString())
-    localStorage.setItem('preferredChannel', preferredChannel)
-    
-    setSuccess('Preferências salvas com sucesso!')
-    setTimeout(() => setSuccess(null), 3000)
+  const handleSavePreferences = async () => {
+    if (!user?.id) return
+
+    try {
+      setSaving(true)
+      setError(null)
+
+      // MODIFIQUEI AQUI - Salvar preferências no Supabase (notification_preferences)
+      const { error: upsertErr } = await supabase
+        .from('notification_preferences')
+        .upsert({
+          user_id: user.id,
+          enabled: notificationsEnabled,
+          notify_draw_done: notifyDraws,
+          notify_contest_finished: notifyFinished,
+        })
+
+      if (upsertErr) throw upsertErr
+
+      setSuccess('Preferências salvas com sucesso!')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      console.error('Erro ao salvar preferências:', err)
+      setError('Erro ao salvar preferências')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleEndSessions = async () => {
@@ -280,7 +296,7 @@ export default function SettingsPage() {
     try {
       setSaving(true)
       setError(null)
-      
+
       // MODIFIQUEI AQUI - Encerrar todas as sessões exceto a atual
       // Por enquanto, apenas atualiza o updated_at para simular
       await supabase
@@ -321,7 +337,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#F9F9F9] flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8 max-w-7xl">
         {/* Cabeçalho */}
         <div className="mb-6">
@@ -334,7 +350,7 @@ export default function SettingsPage() {
             </svg>
             Voltar
           </Link>
-          
+
           <h1 className="text-3xl font-extrabold text-[#1F1F1F] mb-2">
             ⚙️ Configurações
           </h1>
@@ -364,11 +380,10 @@ export default function SettingsPage() {
               <nav className="space-y-2">
                 <button
                   onClick={() => setActiveSection('profile')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                    activeSection === 'profile'
-                      ? 'bg-[#1E7F43] text-white'
-                      : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${activeSection === 'profile'
+                    ? 'bg-[#1E7F43] text-white'
+                    : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
+                    }`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -378,11 +393,10 @@ export default function SettingsPage() {
 
                 <button
                   onClick={() => setActiveSection('preferences')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                    activeSection === 'preferences'
-                      ? 'bg-[#F4C430] text-[#1F1F1F]'
-                      : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${activeSection === 'preferences'
+                    ? 'bg-[#F4C430] text-[#1F1F1F]'
+                    : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
+                    }`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -392,11 +406,10 @@ export default function SettingsPage() {
 
                 <button
                   onClick={() => setActiveSection('security')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                    activeSection === 'security'
-                      ? 'bg-red-500 text-white'
-                      : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
-                  }`}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${activeSection === 'security'
+                    ? 'bg-red-500 text-white'
+                    : 'text-[#1F1F1F] hover:bg-[#F9F9F9]'
+                    }`}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -653,41 +666,17 @@ export default function SettingsPage() {
                         </label>
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                          Canal preferido:
-                        </label>
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => setPreferredChannel('whatsapp')}
-                            className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all ${
-                              preferredChannel === 'whatsapp'
-                                ? 'bg-green-500 text-white'
-                                : 'bg-[#F9F9F9] text-[#1F1F1F] hover:bg-[#E5E5E5]'
-                            }`}
-                          >
-                            WhatsApp
-                          </button>
-                          <button
-                            onClick={() => setPreferredChannel('email')}
-                            className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all ${
-                              preferredChannel === 'email'
-                                ? 'bg-blue-500 text-white'
-                                : 'bg-[#F9F9F9] text-[#1F1F1F] hover:bg-[#E5E5E5]'
-                            }`}
-                          >
-                            E-mail
-                          </button>
-                        </div>
-                      </div>
+                      {/* Canal preferido (se quiser reativar depois) */}
+                      {/* setPreferredChannel continua aqui para futuro */}
                     </>
                   )}
 
                   <button
                     onClick={handleSavePreferences}
-                    className="w-full sm:w-auto px-6 py-3 bg-[#F4C430] text-[#1F1F1F] rounded-xl font-semibold hover:bg-[#FFD700] transition-colors"
+                    disabled={saving}
+                    className="w-full sm:w-auto px-6 py-3 bg-[#F4C430] text-[#1F1F1F] rounded-xl font-semibold hover:bg-[#FFD700] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Salvar Preferências
+                    {saving ? 'Salvando...' : 'Salvar Preferências'}
                   </button>
                 </div>
               </div>

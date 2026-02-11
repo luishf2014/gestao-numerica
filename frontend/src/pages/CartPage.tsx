@@ -3,12 +3,14 @@
  *
  * Exibe todos os itens no carrinho e permite finalizar a compra
  */
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { createParticipation } from '../services/participationsService'
 import { createPixPayment } from '../services/asaasService'
+import { listActiveContests } from '../services/contestsService'
+import { Contest } from '../types'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
@@ -43,10 +45,41 @@ function saveLastPurchaseFromCart(params: {
   return payload
 }
 
+// MODIFIQUEI AQUI - helper para ler última compra
+function getLastPurchase(): { contestId: string; selections: number[][]; timestamp?: number } | null {
+  try {
+    const raw = localStorage.getItem(LAST_PURCHASE_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || !parsed.contestId || !Array.isArray(parsed.selections)) return null
+
+    const selections = parsed.selections
+      .filter((arr: any) => Array.isArray(arr))
+      .map((arr: any) =>
+        arr
+          .map((n: any) => Number(n))
+          .filter((n: number) => Number.isInteger(n) && n >= 0)
+          .sort((a: number, b: number) => a - b)
+      )
+      .filter((arr: number[]) => arr.length > 0)
+
+    if (selections.length === 0) return null
+
+    return {
+      contestId: String(parsed.contestId),
+      selections,
+      timestamp: parsed.timestamp ? Number(parsed.timestamp) : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 export default function CartPage() {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
-  const { items, removeItem, clearCart, getItemCount, getTotalPrice } = useCart()
+  const { items, removeItem, clearCart, getItemCount, getTotalPrice, addItem, reloadCart } = useCart()
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -57,6 +90,15 @@ export default function CartPage() {
   const [createdTicketCodes, setCreatedTicketCodes] = useState<string[]>([])
   const [paidAmount, setPaidAmount] = useState<number>(0) // Valor pago (salvo antes de limpar carrinho)
   const processingRef = useRef(false)
+
+  // MODIFIQUEI AQUI - Estados para o box de última compra
+  const [lastPurchase, setLastPurchase] = useState<{ contestId: string; selections: number[][]; timestamp?: number } | null>(null)
+  const [activeContests, setActiveContests] = useState<Contest[]>([])
+  const [selectedLastPurchaseIndices, setSelectedLastPurchaseIndices] = useState<number[]>([])
+  const [selectedActiveContestIds, setSelectedActiveContestIds] = useState<string[]>([])
+  const [applyingLastPurchase, setApplyingLastPurchase] = useState(false)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [errorMessagesList, setErrorMessagesList] = useState<string[]>([])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -73,6 +115,151 @@ export default function CartPage() {
       hour: '2-digit',
       minute: '2-digit',
     })
+  }
+
+  // MODIFIQUEI AQUI - Carregar última compra e concursos ativos
+  useEffect(() => {
+    async function loadData() {
+      // Carregar última compra
+      const last = getLastPurchase()
+      setLastPurchase(last)
+
+      // Carregar concursos ativos
+      try {
+        const contests = await listActiveContests()
+        setActiveContests(contests)
+        
+        // Se houver apenas um concurso ativo, selecionar automaticamente
+        if (contests.length === 1) {
+          setSelectedActiveContestIds([contests[0].id])
+        }
+      } catch (err) {
+        console.error('[CartPage] Erro ao carregar concursos ativos:', err)
+      }
+    }
+
+    loadData()
+  }, [])
+
+  // MODIFIQUEI AQUI - Recarregar carrinho do localStorage quando o usuário fizer login
+  useEffect(() => {
+    if (user) {
+      // Quando o usuário faz login, sempre recarregar o carrinho do localStorage
+      // Isso garante que os itens persistidos sejam exibidos
+      const timer = setTimeout(() => {
+        reloadCart()
+        console.log('[CartPage] Carrinho recarregado após login')
+      }, 100) // Pequeno delay para garantir que o contexto está pronto
+
+      return () => clearTimeout(timer)
+    }
+  }, [user, reloadCart])
+
+  // MODIFIQUEI AQUI - Toggle seleção de números da última compra
+  const toggleLastPurchaseSelection = (index: number) => {
+    setSelectedLastPurchaseIndices(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    )
+  }
+
+  // MODIFIQUEI AQUI - Toggle seleção de concurso
+  const toggleContestSelection = (contestId: string) => {
+    setSelectedActiveContestIds(prev => 
+      prev.includes(contestId)
+        ? prev.filter(id => id !== contestId)
+        : [...prev, contestId]
+    )
+  }
+
+  // MODIFIQUEI AQUI - Selecionar todos os números
+  const selectAllNumbers = () => {
+    if (!lastPurchase) return
+    setSelectedLastPurchaseIndices(lastPurchase.selections.map((_, index) => index))
+  }
+
+  // MODIFIQUEI AQUI - Desmarcar todos os números
+  const deselectAllNumbers = () => {
+    setSelectedLastPurchaseIndices([])
+  }
+
+  // MODIFIQUEI AQUI - Selecionar todos os concursos
+  const selectAllContests = () => {
+    setSelectedActiveContestIds(activeContests.map(c => c.id))
+  }
+
+  // MODIFIQUEI AQUI - Desmarcar todos os concursos
+  const deselectAllContests = () => {
+    setSelectedActiveContestIds([])
+  }
+
+  // MODIFIQUEI AQUI - Aplicar números da última compra nos concursos ativos selecionados
+  const handleApplyLastPurchase = () => {
+    if (!lastPurchase || selectedLastPurchaseIndices.length === 0 || selectedActiveContestIds.length === 0) {
+      setError('Por favor, selecione pelo menos um conjunto de números e um concurso')
+      return
+    }
+
+    try {
+      setApplyingLastPurchase(true)
+      setError(null)
+      
+      let successCount = 0
+      let errorMessages: string[] = []
+
+      // Para cada combinação de números selecionados e concursos selecionados
+      for (const numberIndex of selectedLastPurchaseIndices) {
+        const selectedNumbers = lastPurchase.selections[numberIndex]
+        if (!selectedNumbers || selectedNumbers.length === 0) continue
+
+        for (const contestId of selectedActiveContestIds) {
+          const contest = activeContests.find(c => c.id === contestId)
+          if (!contest) {
+            errorMessages.push(`Concurso não encontrado`)
+            continue
+          }
+
+          // Validar se os números são compatíveis com o concurso
+          if (selectedNumbers.length !== contest.numbers_per_participation) {
+            errorMessages.push(`${contest.name}: requer ${contest.numbers_per_participation} números`)
+            continue
+          }
+
+          const invalidNumbers = selectedNumbers.filter(
+            (n) => n < contest.min_number || n > contest.max_number
+          )
+          if (invalidNumbers.length > 0) {
+            errorMessages.push(`${contest.name}: números fora do intervalo (${contest.min_number} - ${contest.max_number})`)
+            continue
+          }
+
+          // Adicionar ao carrinho
+          addItem(contest, selectedNumbers)
+          successCount++
+        }
+      }
+
+      if (errorMessages.length > 0) {
+        setErrorMessagesList(errorMessages)
+        setShowErrorModal(true)
+      }
+
+      // Feedback de sucesso
+      setTimeout(() => {
+        setApplyingLastPurchase(false)
+        if (successCount > 0) {
+          setSelectedLastPurchaseIndices([])
+          setSelectedActiveContestIds([])
+        }
+      }, 1000)
+    } catch (err) {
+      console.error('[CartPage] Erro ao aplicar última compra:', err)
+      const errorMsg = err instanceof Error ? err.message : 'Erro ao aplicar números'
+      setErrorMessagesList([errorMsg])
+      setShowErrorModal(true)
+      setApplyingLastPurchase(false)
+    }
   }
 
   const handleRemoveItem = (itemId: string) => {
@@ -335,20 +522,274 @@ export default function CartPage() {
               <h1 className="text-3xl font-extrabold text-[#1F1F1F]">
                 Meu Carrinho
               </h1>
-              <p className="text-[#1F1F1F]/70">
-                {getItemCount()} {getItemCount() === 1 ? 'item' : 'itens'} no carrinho
-              </p>
+              {/* MODIFIQUEI AQUI - Só mostrar contador quando estiver logado e tiver itens */}
+              {user && items.length > 0 && (
+                <p className="text-[#1F1F1F]/70">
+                  {getItemCount()} {getItemCount() === 1 ? 'item' : 'itens'} no carrinho
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        {error && (
+        {error && !showErrorModal && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
             <p className="text-red-700 text-sm">{error}</p>
           </div>
         )}
 
-        {items.length === 0 ? (
+        {/* MODIFIQUEI AQUI - Modal de erro bonito */}
+        {showErrorModal && errorMessagesList.length > 0 && (
+          <div 
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" 
+            onClick={() => {
+              setShowErrorModal(false)
+              setErrorMessagesList([])
+            }}
+          >
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col transform transition-all" onClick={(e) => e.stopPropagation()}>
+              {/* Cabeçalho do Modal */}
+              <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white/20 rounded-full p-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Não foi possível adicionar alguns itens</h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowErrorModal(false)
+                    setErrorMessagesList([])
+                  }}
+                  className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Conteúdo do Modal */}
+              <div className="p-6 overflow-y-auto flex-1">
+                <p className="text-[#1F1F1F] mb-4 font-medium">
+                  Os seguintes itens não puderam ser adicionados ao carrinho:
+                </p>
+                <div className="space-y-3">
+                  {errorMessagesList.map((errorMsg, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      <p className="text-red-700 text-sm flex-1 font-medium">{errorMsg}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rodapé do Modal */}
+              <div className="px-6 py-4 bg-[#F9F9F9] border-t border-[#E5E5E5] flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowErrorModal(false)
+                    setErrorMessagesList([])
+                  }}
+                  className="px-6 py-2 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors shadow-md hover:shadow-lg"
+                >
+                  Entendi
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODIFIQUEI AQUI - Box de última compra (apenas quando logado) */}
+        {user && lastPurchase && lastPurchase.selections.length > 0 && activeContests.length > 0 && (
+          <div className="mb-6 bg-white rounded-2xl shadow-lg p-6 border border-[#E5E5E5]">
+            <h2 className="text-lg font-bold text-[#1F1F1F] mb-4 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Repetir Última Compra
+            </h2>
+            
+            <div className="space-y-6">
+              {/* Seleção de números da última compra */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-[#1F1F1F]">
+                    Selecione os números da última compra:
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={selectAllNumbers}
+                      className="text-xs text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
+                    >
+                      Selecionar Todos
+                    </button>
+                    <span className="text-[#1F1F1F]/40">|</span>
+                    <button
+                      onClick={deselectAllNumbers}
+                      className="text-xs text-[#1F1F1F]/60 hover:text-[#1F1F1F] font-semibold transition-colors"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5] max-h-48 overflow-y-auto">
+                  <div className="space-y-2">
+                    {lastPurchase.selections.map((selection, index) => {
+                      const isSelected = selectedLastPurchaseIndices.includes(index)
+                      return (
+                        <label
+                          key={index}
+                          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-[#1E7F43]/10 border-2 border-[#1E7F43]'
+                              : 'bg-white border-2 border-[#E5E5E5] hover:border-[#1E7F43]/50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleLastPurchaseSelection(index)}
+                            className="w-5 h-5 rounded border-2 border-[#E5E5E5] text-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43] focus:ring-offset-2 cursor-pointer"
+                          />
+                          <div className="flex-1 flex items-center gap-1.5">
+                            <div className="flex flex-wrap gap-1.5">
+                              {selection.map((n) => (
+                                <span
+                                  key={n}
+                                  className="px-3 py-1 bg-[#1E7F43] text-white rounded-lg font-bold text-sm"
+                                >
+                                  {n.toString().padStart(2, '0')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                {selectedLastPurchaseIndices.length > 0 && (
+                  <p className="mt-2 text-xs text-[#1F1F1F]/60">
+                    {selectedLastPurchaseIndices.length} {selectedLastPurchaseIndices.length === 1 ? 'opção selecionada' : 'opções selecionadas'}
+                  </p>
+                )}
+              </div>
+
+              {/* Seleção de concursos ativos */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-[#1F1F1F]">
+                    Aplicar nos concursos:
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={selectAllContests}
+                      className="text-xs text-[#1E7F43] hover:text-[#3CCB7F] font-semibold transition-colors"
+                    >
+                      Selecionar Todos
+                    </button>
+                    <span className="text-[#1F1F1F]/40">|</span>
+                    <button
+                      onClick={deselectAllContests}
+                      className="text-xs text-[#1F1F1F]/60 hover:text-[#1F1F1F] font-semibold transition-colors"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5] max-h-48 overflow-y-auto">
+                  <div className="space-y-2">
+                    {activeContests.map((contest) => {
+                      const isSelected = selectedActiveContestIds.includes(contest.id)
+                      return (
+                        <label
+                          key={contest.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-[#1E7F43]/10 border-2 border-[#1E7F43]'
+                              : 'bg-white border-2 border-[#E5E5E5] hover:border-[#1E7F43]/50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleContestSelection(contest.id)}
+                            className="w-5 h-5 rounded border-2 border-[#E5E5E5] text-[#1E7F43] focus:ring-2 focus:ring-[#1E7F43] focus:ring-offset-2 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <span className="text-sm font-semibold text-[#1F1F1F]">
+                              {contest.name}
+                            </span>
+                            {contest.contest_code && (
+                              <span className="text-xs text-[#1F1F1F]/60 font-mono ml-2">
+                                ({contest.contest_code})
+                              </span>
+                            )}
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+                {selectedActiveContestIds.length > 0 && (
+                  <p className="mt-2 text-xs text-[#1F1F1F]/60">
+                    {selectedActiveContestIds.length} {selectedActiveContestIds.length === 1 ? 'concurso selecionado' : 'concursos selecionados'}
+                  </p>
+                )}
+              </div>
+
+              {/* Botão para aplicar */}
+              <button
+                onClick={handleApplyLastPurchase}
+                disabled={applyingLastPurchase || selectedLastPurchaseIndices.length === 0 || selectedActiveContestIds.length === 0}
+                className={`w-full py-3 px-6 rounded-xl font-semibold transition-colors ${
+                  applyingLastPurchase || selectedLastPurchaseIndices.length === 0 || selectedActiveContestIds.length === 0
+                    ? 'bg-[#E5E5E5] text-[#1F1F1F]/60 cursor-not-allowed'
+                    : 'bg-[#1E7F43] text-white hover:bg-[#3CCB7F] shadow-md hover:shadow-lg'
+                }`}
+              >
+                {applyingLastPurchase ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Aplicando...
+                  </span>
+                ) : (
+                  `Aplicar ${selectedLastPurchaseIndices.length * selectedActiveContestIds.length} ${selectedLastPurchaseIndices.length * selectedActiveContestIds.length === 1 ? 'aposta' : 'apostas'} no Carrinho`
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* MODIFIQUEI AQUI - Se não estiver logado, sempre mostrar carrinho vazio */}
+        {!user ? (
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-[#E5E5E5] text-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-[#1F1F1F]/30 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <h2 className="text-xl font-bold text-[#1F1F1F] mb-2">Carrinho Vazio</h2>
+            <p className="text-[#1F1F1F]/70 mb-4">
+              Voce ainda nao adicionou nenhuma aposta ao carrinho.
+            </p>
+            <Link
+              to="/contests"
+              className="inline-block px-6 py-3 bg-[#1E7F43] text-white rounded-xl font-semibold hover:bg-[#3CCB7F] transition-colors"
+            >
+              Ver Concursos Disponiveis
+            </Link>
+          </div>
+        ) : items.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 border border-[#E5E5E5] text-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-[#1F1F1F]/30 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />

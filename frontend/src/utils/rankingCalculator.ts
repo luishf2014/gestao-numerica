@@ -13,7 +13,7 @@
  */
 
 import { Participation, Draw, Contest } from '../types'
-import { calculateHits, getAllHitNumbers, calculateTotalScore } from './rankingHelpers'
+import { calculateHits, getAllHitNumbers, getMaxHitsInSingleDraw } from './rankingHelpers'
 
 export interface RankingEntry {
   participationId: string
@@ -60,6 +60,7 @@ export interface RankingSummary {
 export interface RankingResult {
   entries: RankingEntry[]
   summary: RankingSummary
+  invalidParticipationsCount: number // MODIFIQUEI AQUI - Participações criadas após o primeiro sorteio
 }
 
 /**
@@ -82,6 +83,7 @@ export function calculateRanking(config: RankingConfig): RankingResult {
         lowestWinningScore: null,
         hasAnyWinner: false,
       },
+      invalidParticipationsCount: 0,
     }
   }
 
@@ -104,11 +106,34 @@ export function calculateRanking(config: RankingConfig): RankingResult {
     return drawsToUse.filter((d) => new Date(d.draw_date) >= participationDate)
   }
 
-  // 4. Calcular dados base para cada participacao
-  const entriesBase = participations.map((p) => {
+  // MODIFIQUEI AQUI - Verificar se participação foi criada após o sorteio selecionado (ou último sorteio)
+  // Determinar a data limite: sorteio selecionado ou último sorteio
+  let cutoffDate: Date | null = null
+  if (selectedDrawId) {
+    const selectedDraw = drawsSortedAsc.find(d => d.id === selectedDrawId)
+    cutoffDate = selectedDraw ? new Date(selectedDraw.draw_date) : null
+  } else if (drawsSortedAsc.length > 0) {
+    // Se não há sorteio selecionado, usar o último sorteio
+    cutoffDate = new Date(drawsSortedAsc[drawsSortedAsc.length - 1].draw_date)
+  }
+  
+  const isCreatedAfterCutoff = (createdAt: string): boolean => {
+    if (!cutoffDate) return false
+    return new Date(createdAt) > cutoffDate
+  }
+
+  // 4. Separar participações válidas (antes do sorteio limite) das inválidas (após)
+  const validParticipations = participations.filter((p) => !isCreatedAfterCutoff(p.created_at))
+  const invalidParticipations = participations.filter((p) => isCreatedAfterCutoff(p.created_at))
+
+  // 5. Calcular dados base para cada participacao válida
+  const entriesBase = validParticipations.map((p) => {
     const validDraws = getValidDrawsFor(p.created_at)
     const hitNumbers = getAllHitNumbers(p.numbers, validDraws, p.created_at)
-    const score = calculateTotalScore(p.numbers, validDraws, p.created_at)
+    
+    // MODIFIQUEI AQUI - Score é o MAIOR número de acertos em UM único sorteio (não cumulativo)
+    // Cada sorteio é verificado individualmente, não soma nada entre sorteios
+    const score = getMaxHitsInSingleDraw(p.numbers, validDraws, p.created_at)
 
     // Verificar se atingiu TOP (todos em um sorteio)
     const isTop = validDraws.some(
@@ -146,12 +171,12 @@ export function calculateRanking(config: RankingConfig): RankingResult {
       .map((e) => e.participationId)
   )
 
-  // LOWEST: menor score positivo excluindo TOP e SECOND
+  // LOWEST: menor score (>=0) excluindo TOP e SECOND
   const othersWithScore = entriesBase.filter(
     (e) =>
       !topWinnerIds.has(e.participationId) &&
       !secondWinnerIds.has(e.participationId) &&
-      e.score > 0
+      e.score >= 0
   )
   const lowestScore =
     othersWithScore.length > 0 ? Math.min(...othersWithScore.map((e) => e.score)) : null
@@ -231,7 +256,8 @@ export function calculateRanking(config: RankingConfig): RankingResult {
     hasAnyWinner: topWinnerIds.size > 0 || secondWinnerIds.size > 0 || lowestWinnerIds.size > 0,
   }
 
-  return { entries, summary }
+  // MODIFIQUEI AQUI - Retornar contagem de participações inválidas (criadas após primeiro sorteio)
+  return { entries, summary, invalidParticipationsCount: invalidParticipations.length }
 }
 
 /**

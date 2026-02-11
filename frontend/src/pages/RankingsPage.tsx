@@ -662,8 +662,8 @@ export default function RankingsPage() {
                   )
                 })()}
 
-              {/* Lista de Participantes (Top 10) */}
-              {ranking.length > 0 && (
+              {/* Lista de Participantes (Top 10) - MODIFIQUEI AQUI: só exibir quando houver sorteios */}
+              {ranking.length > 0 && draws.length > 0 && (
                 <div className="rounded-xl sm:rounded-2xl border border-[#E5E5E5] bg-[#F9F9F9] p-4 sm:p-6">
                   <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
                     <div className="p-1.5 sm:p-2 bg-[#1E7F43]/10 rounded-lg">
@@ -684,6 +684,20 @@ export default function RankingsPage() {
                     </div>
                     <h4 className="text-xs sm:text-sm font-semibold text-[#1F1F1F]/60 uppercase tracking-wide">Classificação Completa</h4>
                   </div>
+
+                  {/* MODIFIQUEI AQUI - Mensagem sobre participações criadas após o primeiro sorteio */}
+                  {rankingResult.invalidParticipationsCount > 0 && (
+                    <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
+                      <div className="flex items-center gap-2 text-orange-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span className="text-sm font-semibold">
+                          {rankingResult.invalidParticipationsCount} {rankingResult.invalidParticipationsCount === 1 ? 'participação foi criada' : 'participações foram criadas'} após {selectedDrawId ? 'este sorteio' : 'o último sorteio'} e não aparecem nesta classificação.
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     {/* FONTE ÚNICA DE VERDADE: Usar entries já ordenados do rankingResult */}

@@ -16,6 +16,7 @@ import ComoFuncionaPage from './pages/ComoFuncionaPage'
 import RegulamentoPage from './pages/RegulamentoPage'
 import CentralDeAjudaPage from './pages/CentraldeAjudaPage'
 import TermosDeUsoPage from './pages/TermosDeUsoPage'
+import NotificationsPage from './pages/NotificationsPage'
 
 // Importações do guard e páginas admin
 import RequireAdmin from './routes/RequireAdmin'
@@ -54,6 +55,8 @@ function App() {
             <Route path="/my-tickets" element={<MyTicketsPage />} />
             {/* Rota de Configuracoes */}
             <Route path="/settings" element={<SettingsPage />} />
+            {/* Rota de Notificações */}
+            <Route path="/notifications" element={<NotificationsPage />} />
 
             {/* Páginas institucionais */}
             <Route path="/como-funciona" element={<ComoFuncionaPage />} />

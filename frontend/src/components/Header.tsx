@@ -44,6 +44,7 @@ export default function Header() {
   const [notifUnreadCount, setNotifUnreadCount] = useState(0)
   const notifMenuRef = useRef<HTMLDivElement>(null)
 
+
   // MODIFIQUEI AQUI - Formatar telefone para exibição
   const formatPhone = useCallback((phone: string | undefined | null): string => {
     if (!phone) return ''
@@ -239,7 +240,6 @@ export default function Header() {
       if (event.key === 'Escape' && showProfileMenu) {
         closeProfileMenu()
       }
-      // MODIFIQUEI AQUI - Fechar menu de notificações no ESC
       if (event.key === 'Escape' && showNotifMenu) {
         setShowNotifMenu(false)
       }
@@ -282,7 +282,7 @@ export default function Header() {
 
         <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <nav className="flex items-center justify-between" role="navigation" aria-label="Navegação principal">
-            {/* MODIFIQUEI AQUI - Logo e Nome da Plataforma */}
+            {/* Logo e Nome da Plataforma */}
             <Link
               to={user ? "/contests" : "/"}
               className="flex items-center gap-3 hover:opacity-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/50 rounded-xl px-2 py-1 -ml-2"
@@ -302,7 +302,43 @@ export default function Header() {
               </div>
             </Link>
 
-            {/* Links de Navegação - Visíveis para todos */}
+            {/* Carrinho e Notificações - Visível apenas em mobile (< md) */}
+            <div className="flex md:hidden items-center gap-2 flex-1 justify-end">
+              {user && (
+                <>
+                  <Link
+                    to="/cart"
+                    className="relative p-2.5 text-white/90 hover:text-white rounded-lg hover:bg-white/10 transition-all"
+                    title="Carrinho"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    {cartItemCount > 0 && (
+                      <span className="absolute top-0.5 right-0.5 bg-[#F4C430] text-[#1F1F1F] text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                        {cartItemCount > 9 ? '9+' : cartItemCount}
+                      </span>
+                    )}
+                  </Link>
+                  <Link
+                    to="/notifications"
+                    className="relative p-2.5 mr-3 text-white/90 hover:text-white rounded-lg hover:bg-white/10 transition-all"
+                    title="Notificações"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    {notifUnreadCount > 0 && (
+                      <span className="absolute top-0.5 right-0.5 bg-[#F4C430] text-[#1F1F1F] text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center">
+                        {notifUnreadCount > 9 ? '9+' : notifUnreadCount}
+                      </span>
+                    )}
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Links de Navegação - Visíveis em desktop (>= md) */}
             <div className="hidden md:flex items-center gap-2">
               <Link
                 to="/contests"
@@ -321,13 +357,23 @@ export default function Header() {
                 </Link>
               )}
 
-              {/* MODIFIQUEI AQUI - Link "Meus Tickets" visível apenas quando autenticado */}
+              {/* Link "Meus Tickets" visível apenas quando autenticado */}
               {user && (
                 <Link
                   to="/my-tickets"
                   className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
                 >
                   Meus Tickets
+                </Link>
+              )}
+
+              {/* Link "Última Compra" visível apenas quando autenticado */}
+              {user && (
+                <Link
+                  to="/ultima-compra"
+                  className="px-4 py-2 text-white/90 hover:text-white font-semibold text-sm rounded-lg hover:bg-white/10 transition-all"
+                >
+                  Última Compra
                 </Link>
               )}
 
@@ -399,9 +445,8 @@ export default function Header() {
                               <button
                                 key={n.id}
                                 onClick={() => openNotif(n)}
-                                className={`w-full text-left rounded-2xl border p-3 transition-all ${
-                                  n.read_at ? 'border-[#E5E5E5] bg-white hover:bg-[#F9F9F9]' : 'border-[#F4C430] bg-[#F4C430]/10 hover:bg-[#F4C430]/15'
-                                }`}
+                                className={`w-full text-left rounded-2xl border p-3 transition-all ${n.read_at ? 'border-[#E5E5E5] bg-white hover:bg-[#F9F9F9]' : 'border-[#F4C430] bg-[#F4C430]/10 hover:bg-[#F4C430]/15'
+                                  }`}
                               >
                                 <div className="font-extrabold text-[#1F1F1F] text-sm">{n.title}</div>
                                 <div className="text-xs text-[#1F1F1F]/70 mt-1 line-clamp-2">{n.message}</div>
@@ -538,20 +583,24 @@ export default function Header() {
 
                     {/* Itens do menu */}
                     <div className="p-2" role="group">
-                      {/* Links admin atualizados no dropdown do perfil */}
+                      {/* Painel Administrativo (admin) */}
+                      {isAdmin && (
+                        <Link
+                          to="/admin"
+                          onClick={closeProfileMenu}
+                          role="menuitem"
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1E7F43] hover:bg-[#1E7F43]/10 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                          </svg>
+                          Painel Administrativo
+                        </Link>
+                      )}
+
+                      {/* Concursos (admin) - Gerenciar e Criar acima de Meus Tickets */}
                       {isAdmin && (
                         <>
-                          <Link
-                            to="/admin"
-                            onClick={closeProfileMenu}
-                            role="menuitem"
-                            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1E7F43] hover:bg-[#1E7F43]/10 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                            </svg>
-                            Painel Administrativo
-                          </Link>
                           <Link
                             to="/admin/contests"
                             onClick={closeProfileMenu}
@@ -574,9 +623,22 @@ export default function Header() {
                             </svg>
                             Criar Novo Concurso
                           </Link>
-                          <div className="my-2 border-t border-[#E5E5E5]" role="separator"></div>
                         </>
                       )}
+
+                      <div className="my-2 border-t border-[#E5E5E5]" role="separator"></div>
+
+                      <Link
+                        to="/contests"
+                        onClick={closeProfileMenu}
+                        role="menuitem"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1F1F1F] hover:bg-[#F9F9F9] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1F1F1F]/60 group-hover:text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Concursos
+                      </Link>
 
                       <Link
                         to="/settings"
@@ -590,7 +652,8 @@ export default function Header() {
                         Meu Perfil
                       </Link>
 
-                      {/* MODIFIQUEI AQUI - Link para Meus Tickets */}
+
+                      {/* Link para Meus Tickets */}
                       <Link
                         to="/my-tickets"
                         onClick={closeProfileMenu}
@@ -601,6 +664,19 @@ export default function Header() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                         </svg>
                         Meus Tickets
+                      </Link>
+
+                      {/* Link para Última Compra */}
+                      <Link
+                        to="/ultima-compra"
+                        onClick={closeProfileMenu}
+                        role="menuitem"
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-[#1F1F1F] hover:bg-[#F9F9F9] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#1E7F43]/20 group"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1F1F1F]/60 group-hover:text-[#1E7F43]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Última Compra
                       </Link>
 
                       {/* MODIFIQUEI AQUI - Link para Rankings */}

@@ -9,6 +9,7 @@ import CheckoutPage from './pages/CheckoutPage'
 import CartPage from './pages/CartPage'
 import LoginPage from './pages/LoginPage'
 import MyTicketsPage from './pages/MyTicketsPage'
+import LastPurchasePage from './pages/LastPurchasePage'
 import RankingPage from './pages/RankingPage'
 import RankingsPage from './pages/RankingsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -53,6 +54,8 @@ function App() {
             <Route path="/rankings" element={<RankingsPage />} />
             {/* Rota de Meus Tickets */}
             <Route path="/my-tickets" element={<MyTicketsPage />} />
+            {/* Rota de Última Compra */}
+            <Route path="/ultima-compra" element={<LastPurchasePage />} />
             {/* Rota de Configuracoes */}
             <Route path="/settings" element={<SettingsPage />} />
             {/* Rota de Notificações */}

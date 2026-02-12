@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { listAllContests } from '../../services/contestsService'
 import { listDrawsByContestId } from '../../services/drawsService'
 import { getReportData, getRevenueByPeriod, ReportData } from '../../services/reportsService'
@@ -315,40 +316,40 @@ export default function AdminReports() {
               <label htmlFor="contest-select" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Selecionar Concurso
               </label>
-              <select
+              <CustomSelect
                 id="contest-select"
                 value={selectedContestId}
-                onChange={(e) => setSelectedContestId(e.target.value)}
+                onChange={setSelectedContestId}
                 disabled={loading}
-                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent disabled:opacity-50"
-              >
-                <option value="">Selecione um concurso</option>
-                {contests.map((contest) => (
-                  <option key={contest.id} value={contest.id}>
-                    {contest.name} ({contest.status}){contest.contest_code ? ` - ${contest.contest_code}` : ''}
-                  </option>
-                ))}
-              </select>
+                placeholder="Selecione um concurso"
+                options={[
+                  { value: '', label: 'Selecione um concurso' },
+                  ...contests.map((c) => ({
+                    value: c.id,
+                    label: `${c.name} (${c.status})${c.contest_code ? ` - ${c.contest_code}` : ''}`,
+                  })),
+                ]}
+              />
             </div>
 
             <div>
               <label htmlFor="draw-select" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Selecionar Sorteio (Opcional)
               </label>
-              <select
+              <CustomSelect
                 id="draw-select"
                 value={selectedDrawId}
-                onChange={(e) => setSelectedDrawId(e.target.value)}
+                onChange={setSelectedDrawId}
                 disabled={!selectedContestId || draws.length === 0}
-                className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent disabled:opacity-50"
-              >
-                <option value="">Todos os sorteios (mais recente)</option>
-                {draws.map((draw) => (
-                  <option key={draw.id} value={draw.id}>
-                    {draw.code || `Sorteio ${formatDate(draw.draw_date)}`}
-                  </option>
-                ))}
-              </select>
+                placeholder="Todos os sorteios (mais recente)"
+                options={[
+                  { value: '', label: 'Todos os sorteios (mais recente)' },
+                  ...draws.map((d) => ({
+                    value: d.id,
+                    label: d.code || `Sorteio ${formatDate(d.draw_date)}`,
+                  })),
+                ]}
+              />
               {selectedContestId && draws.length === 0 && (
                 <p className="text-xs text-[#1F1F1F]/60 mt-1">
                   Este concurso ainda não possui sorteios realizados

@@ -17,6 +17,7 @@ import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { getContestState } from '../utils/contestHelpers'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
+import CustomSelect from '../components/CustomSelect'
 
 interface ParticipationWithUser extends Participation {
   user: { id: string; name: string; email: string } | null
@@ -445,20 +446,15 @@ export default function RankingPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-[#1F1F1F]">🎯 Resultado do Sorteio</h2>
               {draws.length > 1 && (
-                <select
+                <CustomSelect
                   value={selectedDrawId}
-                  onChange={(e) => {
-                    console.log('MODIFIQUEI AQUI [RankingPage] select onChange selectedDrawId =>', e.target.value)
-                    setSelectedDrawId(e.target.value)
-                  }}
-                  className="px-4 py-2 border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1E7F43]"
-                >
-                  {draws.map((draw) => (
-                    <option key={draw.id} value={draw.id}>
-                      {formatDateTime(draw.draw_date)} {draw.code ? `(${draw.code})` : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedDrawId}
+                  options={draws.map((d) => ({
+                    value: d.id,
+                    label: `${formatDateTime(d.draw_date)} ${d.code ? `(${d.code})` : ''}`,
+                  }))}
+                  className="min-w-[200px]"
+                />
               )}
             </div>
 

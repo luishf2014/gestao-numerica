@@ -170,8 +170,19 @@ function normalizeEndDate(endDate: string): string {
 }
 
 export async function listAllPayments(filters?: PaymentFilters): Promise<PaymentWithDetails[]> {
-  // MODIFIQUEI AQUI - trazer contest junto no mesmo select (sem N+1)
-  // e aplicar filtro de contestId no banco (sem pós-filter)
+  // Quando filtrar por concurso: buscar IDs de participações primeiro (filtro via tabela relacionada pode falhar no PostgREST)
+  let participationIds: string[] | null = null
+  if (filters?.contestId) {
+    const { data: participationsData } = await supabase
+      .from('participations')
+      .select('id')
+      .eq('contest_id', filters.contestId)
+    participationIds = (participationsData || []).map((p) => p.id)
+    if (participationIds.length === 0) {
+      return [] // Nenhuma participação no concurso = nenhum pagamento
+    }
+  }
+
   let query = supabase
     .from('payments')
     .select(`
@@ -198,17 +209,15 @@ export async function listAllPayments(filters?: PaymentFilters): Promise<Payment
   }
 
   if (filters?.startDate) {
-    // se vier "YYYY-MM-DD", ok: gte a partir da meia-noite desse dia
     query = query.gte('created_at', /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate) ? `${filters.startDate}T00:00:00.000` : filters.startDate)
   }
 
   if (filters?.endDate) {
-    query = query.lte('created_at', normalizeEndDate(filters.endDate)) // MODIFIQUEI AQUI
+    query = query.lte('created_at', normalizeEndDate(filters.endDate))
   }
 
-  if (filters?.contestId) {
-    // MODIFIQUEI AQUI - filtrar pelo concurso via tabela relacionada
-    query = query.eq('participations.contest_id', filters.contestId)
+  if (participationIds !== null) {
+    query = query.in('participation_id', participationIds)
   }
 
   const { data, error } = await query

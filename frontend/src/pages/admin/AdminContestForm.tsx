@@ -8,6 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { getContestById, createContest, updateContest, CreateContestInput, UpdateContestInput } from '../../services/contestsService'
 
 export default function AdminContestForm() {
@@ -366,19 +367,17 @@ export default function AdminContestForm() {
                 <label htmlFor="status" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                   Status <span className="text-red-500">*</span>
                 </label>
-                <select
+                <CustomSelect
                   id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-4 py-3 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                >
-                  <option value="draft">Rascunho</option>
-                  <option value="active">Ativo</option>
-                  <option value="finished">Finalizado</option>
-                  <option value="cancelled">Cancelado</option>
-                </select>
+                  value={formData.status ?? 'draft'}
+                  onChange={(v) => setFormData((prev) => ({ ...prev, status: v as CreateContestInput['status'] }))}
+                  options={[
+                    { value: 'draft', label: 'Rascunho' },
+                    { value: 'active', label: 'Ativo' },
+                    { value: 'finished', label: 'Finalizado' },
+                    { value: 'cancelled', label: 'Cancelado' },
+                  ]}
+                />
               </div>
               <div>
                 <label htmlFor="participation_value" className="block text-sm font-semibold text-[#1F1F1F] mb-2">

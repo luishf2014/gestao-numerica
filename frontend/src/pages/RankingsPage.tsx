@@ -17,6 +17,7 @@ import { calculateRanking, createRankingMap, RankingEntry } from '../utils/ranki
 import { getAllHitNumbers } from '../utils/rankingHelpers'
 import { useAuth } from '../contexts/AuthContext'
 import ContestStatusBadge from '../components/ContestStatusBadge'
+import CustomSelect from '../components/CustomSelect'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
@@ -454,24 +455,23 @@ export default function RankingsPage() {
             <label htmlFor="contest-select" className="block text-sm sm:text-base font-semibold text-[#1F1F1F] mb-3">
               Selecione o Concurso para ver o Ranking:
             </label>
-            <select
+            <CustomSelect
               id="contest-select"
               value={selectedContestId}
-              onChange={(e) => {
-                setSelectedContestId(e.target.value)
-                // MODIFIQUEI AQUI - resetar sorteio ao trocar concurso
+              onChange={(v) => {
+                setSelectedContestId(v)
                 setSelectedDrawId('')
               }}
-              className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-sm sm:text-base font-semibold bg-white"
-            >
-              <option value="">-- Selecione um concurso --</option>
-              {availableContests.map((contest) => (
-                <option key={contest.id} value={contest.id}>
-                  {contest.name}{' '}
-                  {contest.status === 'active' ? '(Ativo)' : contest.status === 'finished' ? '(Finalizado)' : ''}
-                </option>
-              ))}
-            </select>
+              placeholder="-- Selecione um concurso --"
+              options={[
+                { value: '', label: '-- Selecione um concurso --' },
+                ...availableContests.map((c) => ({
+                  value: c.id,
+                  label: `${c.name} ${c.status === 'active' ? '(Ativo)' : c.status === 'finished' ? '(Finalizado)' : ''}`,
+                })),
+              ]}
+              className="text-sm sm:text-base font-semibold border-2"
+            />
             {availableContests.length === 0 && (
               <p className="mt-3 text-sm text-[#1F1F1F]/60">
                 {activeTab === 'active'
@@ -568,18 +568,16 @@ export default function RankingsPage() {
                 <div className="mb-4">
                   <div className="rounded-xl border border-[#E5E5E5] bg-white p-4">
                     <label className="block text-sm font-semibold text-[#1F1F1F] mb-2">Selecione o Sorteio:</label>
-                    <select
+                    <CustomSelect
                       value={selectedDrawId}
-                      onChange={(e) => setSelectedDrawId(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent text-sm font-semibold bg-white"
-                    >
-                      <option value="">Todos os sorteios (pontuação total)</option>
-                      {draws.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {formatDate(d.draw_date)}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setSelectedDrawId}
+                      placeholder="Todos os sorteios (pontuação total)"
+                      options={[
+                        { value: '', label: 'Todos os sorteios (pontuação total)' },
+                        ...draws.map((d) => ({ value: d.id, label: formatDate(d.draw_date) })),
+                      ]}
+                      className="text-sm font-semibold border-2"
+                    />
                   </div>
                 </div>
               )}

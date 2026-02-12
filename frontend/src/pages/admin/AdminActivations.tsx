@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { listPendingParticipations, activateParticipation } from '../../services/participationsService'
 import { Participation, Contest } from '../../types'
 import { listAllContests } from '../../services/contestsService'
@@ -387,19 +388,15 @@ export default function AdminActivations() {
               <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Filtrar por Concurso
               </label>
-              <select
+              <CustomSelect
                 id="contest-filter"
                 value={filterContestId}
-                onChange={(e) => setFilterContestId(e.target.value)}
-                className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-              >
-                <option value="all">Todos os Concursos ({participations.length})</option>
-                {contests.map((contest) => (
-                  <option key={contest.id} value={contest.id}>
-                    {contest.name} ({participations.filter(p => p.contest_id === contest.id).length})
-                  </option>
-                ))}
-              </select>
+                onChange={setFilterContestId}
+                options={[
+                  { value: 'all', label: `Todos os Concursos (${participations.length})` },
+                  ...contests.map((c) => ({ value: c.id, label: `${c.name} (${participations.filter(p => p.contest_id === c.id).length})` })),
+                ]}
+              />
             </div>
             <div>
               <label htmlFor="ticket-search" className="block text-sm font-semibold text-[#1F1F1F] mb-2">

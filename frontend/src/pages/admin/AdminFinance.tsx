@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { listAllContests, updateContest } from '../../services/contestsService'
 import { listAllPayments, getFinancialStats, PaymentWithDetails, FinancialStats, PaymentFilters } from '../../services/paymentsService'
 import { listAllDiscounts, createDiscount, updateDiscount, deleteDiscount, CreateDiscountInput, UpdateDiscountInput } from '../../services/discountsService'
@@ -111,6 +112,12 @@ export default function AdminFinance() {
       
       if (filterContestId !== 'all') {
         filters.contestId = filterContestId
+      }
+      if (filterStatus !== 'all') {
+        filters.status = filterStatus as 'pending' | 'paid' | 'cancelled' | 'refunded'
+      }
+      if (filterMethod !== 'all') {
+        filters.paymentMethod = filterMethod as 'pix' | 'cash' | 'manual'
       }
       if (startDate) {
         filters.startDate = startDate
@@ -707,54 +714,47 @@ export default function AdminFinance() {
                   <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                     Concurso
                   </label>
-                  <select
+                  <CustomSelect
                     id="contest-filter"
                     value={filterContestId}
-                    onChange={(e) => setFilterContestId(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                  >
-                    <option value="all">Todos</option>
-                    {contests.map((contest) => (
-                      <option key={contest.id} value={contest.id}>
-                        {contest.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setFilterContestId}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      ...contests.map((c) => ({ value: c.id, label: c.name })),
+                    ]}
+                  />
                 </div>
 
                 <div>
                   <label htmlFor="status-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                     Status
                   </label>
-                  <select
+                  <CustomSelect
                     id="status-filter"
                     value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                  >
-                    <option value="all">Todos</option>
-                    <option value="paid">Pago</option>
-                    <option value="pending">Pendente</option>
-                    <option value="cancelled">Cancelado</option>
-                    <option value="refunded">Reembolsado</option>
-                  </select>
+                    onChange={setFilterStatus}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      { value: 'paid', label: 'Pago' },
+                      { value: 'pending', label: 'Pendente' },
+                    ]}
+                  />
                 </div>
 
                 <div>
                   <label htmlFor="method-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                     Método
                   </label>
-                  <select
+                  <CustomSelect
                     id="method-filter"
                     value={filterMethod}
-                    onChange={(e) => setFilterMethod(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                  >
-                    <option value="all">Todos</option>
-                    <option value="pix">Pix</option>
-                    <option value="cash">Dinheiro</option>
-                    <option value="manual">Manual</option>
-                  </select>
+                    onChange={setFilterMethod}
+                    options={[
+                      { value: 'all', label: 'Todos' },
+                      { value: 'pix', label: 'Pix' },
+                      { value: 'cash', label: 'Dinheiro' },
+                    ]}
+                  />
                 </div>
 
                 <div>
@@ -1146,15 +1146,15 @@ export default function AdminFinance() {
                         <label htmlFor="discount-type" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                           Tipo de Desconto *
                         </label>
-                        <select
+                        <CustomSelect
                           id="discount-type"
                           value={discountForm.discount_type}
-                          onChange={(e) => setDiscountForm({ ...discountForm, discount_type: e.target.value as DiscountType })}
-                          className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                        >
-                          <option value="percentage">Percentual (%)</option>
-                          <option value="fixed">Valor Fixo (R$)</option>
-                        </select>
+                          onChange={(v) => setDiscountForm({ ...discountForm, discount_type: v as DiscountType })}
+                          options={[
+                            { value: 'percentage', label: 'Percentual (%)' },
+                            { value: 'fixed', label: 'Valor Fixo (R$)' },
+                          ]}
+                        />
                       </div>
 
                       <div>
@@ -1184,19 +1184,15 @@ export default function AdminFinance() {
                       <label htmlFor="discount-contest" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                         Aplicar a Concurso
                       </label>
-                      <select
+                      <CustomSelect
                         id="discount-contest"
                         value={discountForm.contest_id || 'all'}
-                        onChange={(e) => setDiscountForm({ ...discountForm, contest_id: e.target.value === 'all' ? null : e.target.value })}
-                        className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                      >
-                        <option value="all">Todos os Concursos (Global)</option>
-                        {contests.map((contest) => (
-                          <option key={contest.id} value={contest.id}>
-                            {contest.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => setDiscountForm({ ...discountForm, contest_id: v === 'all' ? null : v })}
+                        options={[
+                          { value: 'all', label: 'Todos os Concursos (Global)' },
+                          ...contests.map((c) => ({ value: c.id, label: c.name })),
+                        ]}
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -4,10 +4,11 @@
  * 
  * Gestão de sorteios múltiplos com datas/horários e resultados
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { listAllContests } from '../../services/contestsService'
 import { listAllDraws, createDraw, updateDraw, deleteDraw, CreateDrawInput, UpdateDrawInput } from '../../services/drawsService'
 import { supabase } from '../../lib/supabase'
@@ -43,9 +44,27 @@ export default function AdminDraws() {
     loadData()
   }, [])
 
+  const loadDraws = useCallback(async () => {
+    try {
+      let drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
+
+      if (filterOnlyOngoing) {
+        const ongoingContestIds = contests
+          .filter(c => c.status === 'active')
+          .map(c => c.id)
+        drawsData = drawsData.filter(draw => ongoingContestIds.includes(draw.contest_id))
+      }
+
+      setDraws(drawsData)
+    } catch (err) {
+      console.error('Erro ao carregar sorteios:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao carregar sorteios')
+    }
+  }, [filterContestId, filterOnlyOngoing, contests])
+
   useEffect(() => {
     loadDraws()
-  }, [filterContestId, filterOnlyOngoing])
+  }, [loadDraws])
 
   const loadData = async () => {
     try {
@@ -59,27 +78,6 @@ export default function AdminDraws() {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadDraws = async () => {
-    try {
-      let drawsData = await listAllDraws(filterContestId !== 'all' ? filterContestId : undefined)
-
-      // Filtrar por concursos em andamento (ativos ou finalizados, excluindo rascunhos e cancelados)
-      // Nota: o trigger auto_finish_contest_on_first_draw muda o status para 'finished' ao criar o primeiro sorteio,
-      // então concursos com sorteios terão status 'finished', não 'active'
-      if (filterOnlyOngoing) {
-        const ongoingContestIds = contests
-          .filter(c => c.status === 'active' || c.status === 'finished')
-          .map(c => c.id)
-        drawsData = drawsData.filter(draw => ongoingContestIds.includes(draw.contest_id))
-      }
-
-      setDraws(drawsData)
-    } catch (err) {
-      console.error('Erro ao carregar sorteios:', err)
-      setError(err instanceof Error ? err.message : 'Erro ao carregar sorteios')
     }
   }
 
@@ -619,53 +617,31 @@ export default function AdminDraws() {
           <>
             {/* Filtros e Estatísticas */}
             <div className="bg-white rounded-2xl border border-[#E5E5E5] p-6 shadow-sm mb-6">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-                <div className="flex-1">
-                  <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
-                    Filtrar por Concurso
-                  </label>
-                  <select
-                    id="contest-filter"
-                    value={filterContestId}
-                    onChange={(e) => setFilterContestId(e.target.value)}
-                    className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-                  >
-                    <option value="all">Todos os Concursos</option>
-                    {contests
-                      .filter(contest => !filterOnlyOngoing || (contest.status === 'active' || contest.status === 'finished'))
-                      .map((contest) => (
-                        <option key={contest.id} value={contest.id}>
-                          {contest.name}{contest.contest_code ? ` (${contest.contest_code})` : ''}{contest.status !== 'active' ? ` [${contest.status === 'finished' ? 'Finalizado' : contest.status === 'draft' ? 'Rascunho' : contest.status}]` : ''}
-                        </option>
-                      ))}
-                  </select>
-                  {/* Filtro de concursos em andamento */}
-                  <div className="mt-3 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="ongoing-filter"
-                      checked={filterOnlyOngoing}
-                      onChange={(e) => {
-                        setFilterOnlyOngoing(e.target.checked)
-                        // Se ativar o filtro e o concurso selecionado for rascunho ou cancelado, resetar para "todos"
-                        if (e.target.checked && filterContestId !== 'all') {
-                          const selectedContest = contests.find(c => c.id === filterContestId)
-                          if (selectedContest && selectedContest.status !== 'active' && selectedContest.status !== 'finished') {
-                            setFilterContestId('all')
-                          }
-                        }
-                      }}
-                      className="w-4 h-4 text-[#1E7F43] bg-white border-2 border-[#E5E5E5] rounded focus:ring-[#1E7F43] focus:ring-2 cursor-pointer"
-                    />
-                    <label htmlFor="ongoing-filter" className="text-sm text-[#1F1F1F]/70 cursor-pointer select-none">
-                      Mostrar apenas concursos em andamento
+              <div className="flex flex-col gap-4 mb-4">
+                {/* Dropdown e Botão Novo Sorteio na mesma linha */}
+                <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                  <div className="flex-1 min-w-0">
+                    <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
+                      Filtrar por Concurso
                     </label>
+                    <CustomSelect
+                      id="contest-filter"
+                      value={filterContestId}
+                      onChange={setFilterContestId}
+                      options={[
+                        { value: 'all', label: 'Todos os Concursos' },
+                        ...contests
+                          .filter((c) => !filterOnlyOngoing || c.status === 'active')
+                          .map((c) => ({
+                            value: c.id,
+                            label: `${c.name}${c.contest_code ? ` (${c.contest_code})` : ''}${c.status !== 'active' ? ` [${c.status === 'finished' ? 'Finalizado' : c.status === 'draft' ? 'Rascunho' : c.status}]` : ''}`,
+                          })),
+                      ]}
+                    />
                   </div>
-                </div>
-                <div className="flex items-end">
                   <button
                     onClick={() => handleOpenDrawModal()}
-                    className="px-6 py-2 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center gap-2"
+                    className="shrink-0 h-[42px] px-6 bg-[#1E7F43] text-white rounded-xl hover:bg-[#3CCB7F] transition-colors font-semibold flex items-center justify-center gap-2"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -673,6 +649,38 @@ export default function AdminDraws() {
                     Novo Sorteio
                   </button>
                 </div>
+                {/* Filtro de concursos em andamento */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !filterOnlyOngoing
+                    setFilterOnlyOngoing(next)
+                    if (next && filterContestId !== 'all') {
+                      const selectedContest = contests.find(c => c.id === filterContestId)
+                      if (selectedContest && selectedContest.status !== 'active') {
+                        setFilterContestId('all')
+                      }
+                    }
+                  }}
+                  className="flex items-center gap-2 w-fit px-3 py-2 rounded-lg border border-[#E5E5E5] bg-white hover:bg-[#F9F9F9] transition-colors cursor-pointer text-left"
+                >
+                  <span
+                    className={`flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                      filterOnlyOngoing
+                        ? 'bg-[#1E7F43] border-[#1E7F43]'
+                        : 'bg-white border-[#E5E5E5]'
+                    }`}
+                  >
+                    {filterOnlyOngoing && (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="text-sm font-medium text-[#1F1F1F]">
+                    Mostrar apenas concursos em andamento
+                  </span>
+                </button>
               </div>
 
               {/* Estatísticas */}
@@ -831,22 +839,23 @@ export default function AdminDraws() {
                           <span className="text-[#1E7F43]">*</span>
                           Concurso
                         </label>
-                        <select
+                        <CustomSelect
                           id="draw-contest"
                           value={drawForm.contest_id}
-                          onChange={(e) => setDrawForm({ ...drawForm, contest_id: e.target.value, numbers: [] })}
-                          className="w-full px-4 py-3 border-2 border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-[#1E7F43] transition-all bg-white font-medium text-[#1F1F1F]"
+                          onChange={(v) => setDrawForm({ ...drawForm, contest_id: v, numbers: [] })}
                           disabled={!!editingDraw}
-                        >
-                          <option value="">Selecione um concurso</option>
-                          {contests
-                            .filter(contest => editingDraw || contest.status === 'active') // Só mostra ativos para novos sorteios
-                            .map((contest) => (
-                              <option key={contest.id} value={contest.id}>
-                                {contest.name} ({contest.numbers_per_participation} números){contest.contest_code ? ` - ${contest.contest_code}` : ''}
-                              </option>
-                            ))}
-                        </select>
+                          placeholder="Selecione um concurso"
+                          options={[
+                            { value: '', label: 'Selecione um concurso' },
+                            ...contests
+                              .filter((c) => editingDraw || c.status === 'active')
+                              .map((c) => ({
+                                value: c.id,
+                                label: `${c.name} (${c.numbers_per_participation} números)${c.contest_code ? ` - ${c.contest_code}` : ''}`,
+                              })),
+                          ]}
+                          className="border-2 font-medium"
+                        />
                       </div>
 
                       {drawForm.contest_id && (

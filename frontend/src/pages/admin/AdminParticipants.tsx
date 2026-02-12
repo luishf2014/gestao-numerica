@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../../components/Header'
 import Footer from '../../components/Footer'
+import CustomSelect from '../../components/CustomSelect'
 import { listAllParticipations } from '../../services/participationsService'
 import { Participation, Contest } from '../../types'
 import { listAllContests } from '../../services/contestsService'
@@ -213,35 +214,31 @@ export default function AdminParticipants() {
               <label htmlFor="contest-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Filtrar por Concurso
               </label>
-              <select
+              <CustomSelect
                 id="contest-filter"
                 value={filterContestId}
-                onChange={(e) => setFilterContestId(e.target.value)}
-                className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-              >
-                <option value="all">Todos os Concursos</option>
-                {contests.map((contest) => (
-                  <option key={contest.id} value={contest.id}>
-                    {contest.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setFilterContestId}
+                options={[
+                  { value: 'all', label: 'Todos os Concursos' },
+                  ...contests.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+              />
             </div>
             <div>
               <label htmlFor="status-filter" className="block text-sm font-semibold text-[#1F1F1F] mb-2">
                 Filtrar por Status
               </label>
-              <select
+              <CustomSelect
                 id="status-filter"
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full px-4 py-2 border border-[#E5E5E5] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1E7F43] focus:border-transparent"
-              >
-                <option value="all">Todos os Status</option>
-                <option value="pending">Pendente</option>
-                <option value="active">Ativa</option>
-                <option value="cancelled">Cancelada</option>
-              </select>
+                onChange={setFilterStatus}
+                options={[
+                  { value: 'all', label: 'Todos os Status' },
+                  { value: 'pending', label: 'Pendente' },
+                  { value: 'active', label: 'Ativa' },
+                  { value: 'cancelled', label: 'Cancelada' },
+                ]}
+              />
             </div>
             <div>
               <label htmlFor="search" className="block text-sm font-semibold text-[#1F1F1F] mb-2">

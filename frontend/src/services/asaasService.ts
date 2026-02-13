@@ -7,8 +7,9 @@ export interface AsaasPixQRCodeResponse {
 }
 
 export interface CreatePixPaymentParams {
-  // MODIFIQUEI AQUI - Edge Function exige contestId (body_validation)
+  // MODIFIQUEI AQUI - exigidos pela Edge Function (body_validation)
   contestId: string
+  selectedNumbers: number[]
 
   participationId: string
   ticketCode: string

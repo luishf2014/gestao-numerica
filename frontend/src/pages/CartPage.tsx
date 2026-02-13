@@ -128,7 +128,7 @@ export default function CartPage() {
       try {
         const contests = await listActiveContests()
         setActiveContests(contests)
-        
+
         // Se houver apenas um concurso ativo, selecionar automaticamente
         if (contests.length === 1) {
           setSelectedActiveContestIds([contests[0].id])
@@ -157,18 +157,18 @@ export default function CartPage() {
 
   // MODIFIQUEI AQUI - Toggle seleção de números da última compra
   const toggleLastPurchaseSelection = (index: number) => {
-    setSelectedLastPurchaseIndices(prev => 
-      prev.includes(index) 
-        ? prev.filter(i => i !== index)
+    setSelectedLastPurchaseIndices((prev) =>
+      prev.includes(index)
+        ? prev.filter((i) => i !== index)
         : [...prev, index]
     )
   }
 
   // MODIFIQUEI AQUI - Toggle seleção de concurso
   const toggleContestSelection = (contestId: string) => {
-    setSelectedActiveContestIds(prev => 
+    setSelectedActiveContestIds((prev) =>
       prev.includes(contestId)
-        ? prev.filter(id => id !== contestId)
+        ? prev.filter((id) => id !== contestId)
         : [...prev, contestId]
     )
   }
@@ -186,7 +186,7 @@ export default function CartPage() {
 
   // MODIFIQUEI AQUI - Selecionar todos os concursos
   const selectAllContests = () => {
-    setSelectedActiveContestIds(activeContests.map(c => c.id))
+    setSelectedActiveContestIds(activeContests.map((c) => c.id))
   }
 
   // MODIFIQUEI AQUI - Desmarcar todos os concursos
@@ -204,7 +204,7 @@ export default function CartPage() {
     try {
       setApplyingLastPurchase(true)
       setError(null)
-      
+
       let successCount = 0
       let errorMessages: string[] = []
 
@@ -214,7 +214,7 @@ export default function CartPage() {
         if (!selectedNumbers || selectedNumbers.length === 0) continue
 
         for (const contestId of selectedActiveContestIds) {
-          const contest = activeContests.find(c => c.id === contestId)
+          const contest = activeContests.find((c) => c.id === contestId)
           if (!contest) {
             errorMessages.push(`Concurso não encontrado`)
             continue
@@ -293,7 +293,7 @@ export default function CartPage() {
       setProcessing(true)
       setError(null)
 
-      // MODIFIQUEI AQUI - Garantir contestId válido antes de chamar serviços (evita "contestId é obrigatório (step: body_validation)")
+      // MODIFIQUEI AQUI - Garantir contestId válido para o pagamento (Edge Function exige contestId)
       const firstItem = items[0]
       const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''
       if (!cartContestId) {
@@ -339,8 +339,9 @@ export default function CartPage() {
         const firstParticipation = participations[0]
 
         const pixData = await createPixPayment({
-          // MODIFIQUEI AQUI - Enviar contestId no body para passar na validação do backend (body_validation)
+          // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
           contestId: cartContestId,
+
           participationId: firstParticipation.id,
           ticketCode: ticketCodes.join(', '),
           amount: totalAmount,
@@ -554,8 +555,8 @@ export default function CartPage() {
 
         {/* MODIFIQUEI AQUI - Modal de erro bonito */}
         {showErrorModal && errorMessagesList.length > 0 && (
-          <div 
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" 
+          <div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
             onClick={() => {
               setShowErrorModal(false)
               setErrorMessagesList([])
@@ -597,7 +598,7 @@ export default function CartPage() {
                       className="flex items-start gap-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg hover:bg-red-100 transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v6m0 0v.01M12 15h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <p className="text-red-700 text-sm flex-1 font-medium">{errorMsg}</p>
                     </div>

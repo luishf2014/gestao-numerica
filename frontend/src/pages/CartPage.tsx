@@ -293,11 +293,23 @@ export default function CartPage() {
       setProcessing(true)
       setError(null)
 
+      // MODIFIQUEI AQUI - Garantir contestId válido antes de chamar serviços (evita "contestId é obrigatório (step: body_validation)")
+      const firstItem = items[0]
+      const cartContestId = firstItem?.contestId ? String(firstItem.contestId) : ''
+      if (!cartContestId) {
+        throw new Error('contestId é obrigatório para finalizar a compra')
+      }
+
       // Criar todas as participações
       const participations = []
       const ticketCodes: string[] = []
 
       for (const item of items) {
+        // MODIFIQUEI AQUI - Garantir contestId por item
+        if (!item?.contestId) {
+          throw new Error('contestId é obrigatório para criar participação')
+        }
+
         // MODIFIQUEI AQUI - Garantir amount válido ao criar participação (createParticipation agora valida isso)
         const amount = Number(item.price)
         if (!Number.isFinite(amount) || amount <= 0) {
@@ -327,6 +339,8 @@ export default function CartPage() {
         const firstParticipation = participations[0]
 
         const pixData = await createPixPayment({
+          // MODIFIQUEI AQUI - Enviar contestId no body para passar na validação do backend (body_validation)
+          contestId: cartContestId,
           participationId: firstParticipation.id,
           ticketCode: ticketCodes.join(', '),
           amount: totalAmount,

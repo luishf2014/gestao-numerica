@@ -257,8 +257,8 @@ export default function CheckoutPage() {
       // MODIFIQUEI AQUI - Salvar última compra SOMENTE após finalizar com sucesso
       saveLastPurchase({ contestId: contest.id, selections: [selectedNumbers] })
 
-      // MODIFIQUEI AQUI - Salvar última compra SOMENTE após finalizar com sucesso
-      saveLastPurchase({ contestId: contest.id, selections: [selectedNumbers] })
+      // MODIFIQUEI AQUI - Removido duplicado (estava salvando duas vezes)
+      // saveLastPurchase({ contestId: contest.id, selections: [selectedNumbers] })
 
       // Limpar sessionStorage após sucesso
       sessionStorage.removeItem('dezaqui_checkout')
@@ -389,6 +389,9 @@ export default function CheckoutPage() {
 
       // 4. Criar pagamento Pix e gerar QR Code
       const pixData = await createPixPayment({
+        // MODIFIQUEI AQUI - enviar contestId para passar no body_validation da Edge Function
+        contestId: contest.id,
+
         participationId: participationData.id,
         ticketCode: participationData.ticket_code || '',
         amount: finalAmount,

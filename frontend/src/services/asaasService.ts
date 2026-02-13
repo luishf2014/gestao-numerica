@@ -7,6 +7,9 @@ export interface AsaasPixQRCodeResponse {
 }
 
 export interface CreatePixPaymentParams {
+  // MODIFIQUEI AQUI - Edge Function exige contestId (body_validation)
+  contestId: string
+
   participationId: string
   ticketCode: string
   amount: number
@@ -26,20 +29,25 @@ export interface CreatePixPaymentResponse {
 
 /**
  * Cria pagamento PIX e retorna QR Code
- * 
+ *
  * Chama apenas a Edge Function asaas-create-pix que:
  * - Valida autenticação e ownership
  * - Cria pagamento no Asaas
  * - Busca QR Code (com retry automático)
  * - Salva no banco
  * - Retorna resposta completa
- * 
+ *
  * @param params Parâmetros do pagamento PIX
  * @returns Resposta com ID do pagamento e QR Code
  */
 export async function createPixPayment(
   params: CreatePixPaymentParams
 ): Promise<CreatePixPaymentResponse> {
+  // MODIFIQUEI AQUI - validação local para evitar erro misterioso vindo do backend
+  if (!params?.contestId) {
+    throw new Error('contestId é obrigatório (step: body_validation)')
+  }
+
   // Verificar autenticação - getUser() valida o token no servidor
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) {
@@ -83,6 +91,8 @@ export async function createPixPayment(
     url,
     hasAccessToken: !!accessToken,
     accessTokenPrefix: accessToken.substring(0, 12) + '...',
+    // MODIFIQUEI AQUI - loga contestId (sem expor dados sensíveis)
+    contestId: String(params.contestId),
   })
 
   const res = await fetch(url, {
@@ -95,6 +105,9 @@ export async function createPixPayment(
       // ...(anonKey ? { apikey: anonKey } : {}),
     },
     body: JSON.stringify({
+      // MODIFIQUEI AQUI - enviar contestId para passar na validação do backend
+      contestId: params.contestId,
+
       participationId: params.participationId,
       ticketCode: params.ticketCode,
       amount: params.amount,

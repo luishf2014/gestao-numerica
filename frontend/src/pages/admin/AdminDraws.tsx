@@ -60,20 +60,21 @@ export default function AdminDraws() {
     loadData()
   }, [])
 
-  // MODIFIQUEI AQUI - Carregar refs quando seleciona concurso no modal
+  // Carregar refs quando seleciona concurso (no modal Concurso Oficial ou no modal Novo Sorteio)
   useEffect(() => {
-    if (!showOfficialContestFormModal || !officialContestForm.contest_id) {
+    const contestId = drawForm.contest_id || officialContestForm.contest_id
+    if (!contestId) {
       setOfficialRefs([])
       return
     }
     let cancelled = false
     setLoadingOfficialRefs(true)
-    listOfficialRefsByContestId(officialContestForm.contest_id)
+    listOfficialRefsByContestId(contestId)
       .then((data) => { if (!cancelled) setOfficialRefs(data) })
       .catch(() => { if (!cancelled) setOfficialRefs([]) })
       .finally(() => { if (!cancelled) setLoadingOfficialRefs(false) })
     return () => { cancelled = true }
-  }, [showOfficialContestFormModal, officialContestForm.contest_id])
+  }, [showDrawModal, showOfficialContestFormModal, drawForm.contest_id, officialContestForm.contest_id])
 
   const loadDraws = useCallback(async () => {
     try {
@@ -1011,6 +1012,75 @@ export default function AdminDraws() {
                             <p className="text-xs text-[#1F1F1F]/50 mt-2">
                               Referência ao sorteio oficial (ex: Mega-Sena). Informativo, sem vínculo com o sorteio.
                             </p>
+                            {drawForm.contest_id && (
+                              <div className="mt-4 rounded-xl border border-[#E5E5E5] bg-white shadow-sm overflow-hidden">
+                                <div className="px-4 py-3 bg-[#1E7F43]/5 border-b border-[#E5E5E5]">
+                                  <h4 className="text-sm font-semibold text-[#1F1F1F]">O que foi lançado</h4>
+                                </div>
+                                <div className="p-4">
+                                  {loadingOfficialRefs ? (
+                                    <p className="text-sm text-[#1F1F1F]/60">Carregando...</p>
+                                  ) : officialRefs.length === 0 ? (
+                                    <p className="text-sm text-[#1F1F1F]/60">Nenhum ainda. Clique em &quot;Concurso Oficial&quot; para adicionar.</p>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      {officialRefs.map((ref) => (
+                                        <div key={ref.id} className="rounded-xl border border-[#E5E5E5] bg-[#F9F9F9] p-4 hover:border-[#1E7F43]/30 transition-colors">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-base font-bold text-[#1F1F1F]">
+                                                {ref.official_contest_code} • {ref.official_contest_name}
+                                              </p>
+                                              {ref.official_contest_numbers && (
+                                                <p className="text-sm text-[#1F1F1F]/80 mt-1 font-mono">
+                                                  {formatNumbersWithSpaces(ref.official_contest_numbers)}
+                                                </p>
+                                              )}
+                                              {ref.official_contest_date && (
+                                                <p className="text-sm text-[#1F1F1F]/60 mt-1 flex items-center gap-1">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                  </svg>
+                                                  {formatOfficialRefDate(ref.official_contest_date)}
+                                                </p>
+                                              )}
+                                            </div>
+                                            <div className="flex gap-2 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingRefId(ref.id)
+                                                  setOfficialContestForm({
+                                                    contest_id: drawForm.contest_id || '',
+                                                    official_contest_name: ref.official_contest_name,
+                                                    official_contest_code: ref.official_contest_code,
+                                                    official_contest_numbers: ref.official_contest_numbers || '',
+                                                    official_contest_date: ref.official_contest_date || '',
+                                                  })
+                                                  setShowOfficialContestFormModal(true)
+                                                }}
+                                                className="px-3 py-1.5 bg-[#1E7F43] text-white rounded-lg hover:bg-[#3CCB7F] text-xs font-semibold transition-colors"
+                                                title="Editar"
+                                              >
+                                                Editar
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setDeleteRefConfirm(ref.id)}
+                                                className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-xs font-semibold transition-colors"
+                                                title="Excluir"
+                                              >
+                                                Excluir
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <div className="bg-[#F9F9F9] rounded-xl p-4 border border-[#E5E5E5]">
@@ -1182,19 +1252,20 @@ export default function AdminDraws() {
                     </div>
                   </div>
 
-                  {/* Footer do Modal */}
-                  <div className="px-6 py-5 border-t border-[#E5E5E5] bg-gradient-to-r from-white to-[#F9F9F9] flex items-center justify-end gap-4 rounded-b-[2rem]">
-                    <button
-                      onClick={handleCloseDrawModal}
-                      className="px-6 py-3 bg-gray-200 text-[#1F1F1F] rounded-xl hover:bg-gray-300 transition-all duration-200 font-bold shadow-sm hover:shadow-md"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleSaveDraw}
-                      disabled={savingDraw}
-                      className="px-8 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl hover:from-[#3CCB7F] hover:to-[#1E7F43] transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
-                    >
+                  {/* Footer do Modal - mesma largura e alinhamento do conteúdo do formulário */}
+                  <div className="px-4 sm:px-6 py-5 border-t border-[#E5E5E5] bg-gradient-to-r from-white to-[#F9F9F9] rounded-b-[2rem]">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full">
+                      <button
+                        onClick={handleCloseDrawModal}
+                        className="w-full px-4 py-3 bg-gray-200 text-[#1F1F1F] rounded-xl hover:bg-gray-300 transition-all duration-200 font-bold shadow-sm hover:shadow-md"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleSaveDraw}
+                        disabled={savingDraw}
+                        className="w-full px-4 py-3 bg-gradient-to-r from-[#1E7F43] to-[#3CCB7F] text-white rounded-xl hover:from-[#3CCB7F] hover:to-[#1E7F43] transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+                      >
                       {savingDraw ? (
                         <>
                           <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1223,6 +1294,7 @@ export default function AdminDraws() {
                         </>
                       )}
                     </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1508,8 +1580,9 @@ export default function AdminDraws() {
                         if (!deleteRefConfirm) return
                         try {
                           await deleteOfficialRef(deleteRefConfirm)
-                          if (officialContestForm.contest_id) {
-                            const refs = await listOfficialRefsByContestId(officialContestForm.contest_id)
+                          const contestId = drawForm.contest_id || officialContestForm.contest_id
+                          if (contestId) {
+                            const refs = await listOfficialRefsByContestId(contestId)
                             setOfficialRefs(refs)
                           }
                           setDeleteRefConfirm(null)

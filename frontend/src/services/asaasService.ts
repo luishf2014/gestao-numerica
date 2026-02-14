@@ -62,20 +62,13 @@ export async function createPixPayment(
     throw new Error('Usuário não autenticado. Faça login novamente.')
   }
 
-  // Obter sessão atualizada
-  let { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-
-  // Se não tiver sessão válida, tentar refresh
-  if (sessionError || !sessionData?.session) {
-    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
-    if (refreshError || !refreshData?.session) {
-      throw new Error('Sessão expirada. Faça login novamente.')
-    }
-    sessionData = refreshData
+  // SEMPRE fazer refresh da sessão antes de chamar a Edge Function.
+  // getSession() retorna cache que pode ter token expirado → causa "Invalid JWT".
+  const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession()
+  if (sessionError || !sessionData?.session?.access_token) {
+    throw new Error('Sessão expirada. Por favor, faça login novamente.')
   }
-
-  // Verificar se temos token válido
-  const accessToken = sessionData?.session?.access_token
+  const accessToken = sessionData.session.access_token
   if (!accessToken) {
     throw new Error('Token de acesso não disponível. Faça login novamente.')
   }
@@ -88,8 +81,15 @@ export async function createPixPayment(
     (import.meta as any).env?.VITE_SUPABASE_URL ||
     (import.meta as any).env?.SUPABASE_URL
 
+  const anonKey =
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+    (import.meta as any).env?.SUPABASE_ANON_KEY
+
   if (!supabaseUrl) {
     throw new Error('VITE_SUPABASE_URL não configurado.')
+  }
+  if (!anonKey) {
+    throw new Error('VITE_SUPABASE_ANON_KEY não configurado.')
   }
 
   const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/asaas-create-pix`
@@ -107,10 +107,8 @@ export async function createPixPayment(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      // MODIFIQUEI AQUI - garante Bearer correto SEM depender do invoke
       'Authorization': `Bearer ${accessToken}`,
-      // MODIFIQUEI AQUI - REMOVIDO apikey (isso estava causando Invalid JWT)
-      // ...(anonKey ? { apikey: anonKey } : {}),
+      'apikey': anonKey,
     },
       body: JSON.stringify({
     contestId: params.contestId,
